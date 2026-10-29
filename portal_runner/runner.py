@@ -72,8 +72,10 @@ class Runner:
         # Positive authenticated marker plus a protected settings page, not only URL.
         await self.visit("https://github.com/settings/profile")
         heading = self.page.get_by_role("heading", name="Public profile")
-        avatar = self.page.locator('summary[aria-label*="profile"], button[aria-label*="profile"]')
-        return await heading.count() > 0 and await avatar.count() > 0
+        user_meta = self.page.locator('meta[name="user-login"][content]')
+        logged_in_body = self.page.locator("body.logged-in")
+        return (await heading.count() > 0 and await user_meta.count() > 0
+                and await logged_in_body.count() > 0)
 
     async def login(self):
         await self.visit("https://github.com/login")
