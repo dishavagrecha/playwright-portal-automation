@@ -62,3 +62,30 @@ def test_link_fallback_ignores_matching_heading():
             finally:
                 await browser.close()
     asyncio.run(check())
+
+
+def test_corrupt_saved_state_is_classified_as_stale(tmp_path):
+    from playwright.async_api import async_playwright
+    from portal_runner.runner import Runner
+
+    state = tmp_path / "state.json"
+    state.write_text("not JSON")
+    data = {"owner": "owner", "repository": "repo", "tag": "tag",
+            "target_branch": "main", "title": "title", "description": "body", "publish": True}
+
+    class OfflineRunner(Runner):
+        async def session_alive(self): return False
+        async def login(self): pass
+        async def release_exists(self): return True
+        async def download(self): pass
+
+    async def check():
+        async with async_playwright() as p:
+            browser = await p.chromium.launch()
+            try:
+                runner = OfflineRunner(browser, data, tmp_path / "output", state)
+                await runner.run()
+                assert runner.manifest["session"] == "stale_login"
+            finally:
+                await browser.close()
+    asyncio.run(check())

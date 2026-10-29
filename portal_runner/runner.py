@@ -55,6 +55,9 @@ class Runner:
                                                        "will_retry": retry and attempt < 2})
                 if attempt < (2 if retry else 0):
                     await asyncio.sleep(0.5 * 2 ** attempt)
+            except Exception:
+                self.manifest["stage_timings_ms"][key] = round((time.monotonic() - start) * 1000)
+                raise
         self.manifest["stage_timings_ms"][key] = round((time.monotonic() - start) * 1000)
         raise last
 
@@ -170,8 +173,9 @@ class Runner:
 
     async def run(self):
         self.output.mkdir(parents=True, exist_ok=True)
+        state_present = self.state.exists()
         state_valid = False
-        if self.state.exists():
+        if state_present:
             try:
                 saved = json.loads(self.state.read_text(encoding="utf-8"))
                 state_valid = isinstance(saved.get("cookies"), list) and isinstance(saved.get("origins"), list)
@@ -190,7 +194,7 @@ class Runner:
         try:
             alive = await self.step("session_check", self.session_alive, retry=True)
             if not alive:
-                self.manifest["session"] = "fresh_login" if not state_valid else "stale_login"
+                self.manifest["session"] = "stale_login" if state_present else "fresh_login"
                 await self.step("login", self.login)
             else:
                 self.manifest["session"] = "reused"

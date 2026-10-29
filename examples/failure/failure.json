@@ -1,0 +1,15 @@
+{
+  "stage": "offline_missing_field",
+  "url": "about:blank",
+  "console": [
+    "Example failure for [REDACTED]"
+  ],
+  "resolver_attempts": [
+    {
+      "key": "missing_field",
+      "frame": "main",
+      "strategy": "role_name",
+      "matches": 0
+    }
+  ]
+}

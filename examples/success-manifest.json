@@ -1,0 +1,35 @@
+{
+  "inputs": {
+    "owner": "ACCOUNT_OWNER",
+    "repository": "PRIVATE_TEST_REPOSITORY",
+    "tag": "automation-demo-v2",
+    "target_branch": "main",
+    "title": "Automation demo v2",
+    "description": "Second input-driven test release.",
+    "publish": true
+  },
+  "pages_visited": [
+    "https://github.com/settings/profile",
+    "https://github.com/ACCOUNT_OWNER/PRIVATE_TEST_REPOSITORY/releases/tag/automation-demo-v2",
+    "https://github.com/ACCOUNT_OWNER/PRIVATE_TEST_REPOSITORY",
+    "https://github.com/ACCOUNT_OWNER/PRIVATE_TEST_REPOSITORY/releases",
+    "https://github.com/ACCOUNT_OWNER/PRIVATE_TEST_REPOSITORY/releases/new",
+    "https://github.com/ACCOUNT_OWNER/PRIVATE_TEST_REPOSITORY/releases/tag/automation-demo-v2"
+  ],
+  "stage_timings_ms": {
+    "session_check": 1571,
+    "find_release": 700,
+    "create_release": 6578,
+    "download": 871
+  },
+  "captured_files": [
+    {
+      "path": "artifacts/changed/automation-demo-v2.zip",
+      "sha256": "cd49e03192fca70d88c9cc57959d40584ea448ff9a13d67113ebe9b651efe101",
+      "bytes": 400
+    }
+  ],
+  "retry_events": [],
+  "session": "reused",
+  "status": "success"
+}

@@ -57,7 +57,9 @@ Edit the fixture HTML to rename classes, reorder controls, add wrappers, or move
 
 ## Verification status
 
-Four offline tests pass with `python -m pytest -q`, covering TOTP, redaction, iframe/wrapper mutations, and a heading that shares its text with a link. A live run on the account holder's private test repository accepted a generated TOTP code, saved state, created a release, and downloaded its source ZIP. A repeated run reused the saved state and produced the same SHA-256 hash. Changing the input JSON to a second tag created and downloaded another release, with a different ZIP hash. The captured manifests and failure bundles are under gitignored `artifacts/` on the run machine.
+Five offline tests pass with `python -m pytest -q`, covering TOTP, redaction, iframe/wrapper mutations, a heading that shares its text with a link, and malformed saved state. A live run on the account holder's private test repository accepted a generated TOTP code, saved state, created a release, and downloaded its source ZIP. A repeated run reused the saved state and produced the same SHA-256 hash. Changing the input JSON to a second tag created and downloaded another release, with a different ZIP hash. The captured manifests and failure bundles are under gitignored `artifacts/` on the run machine.
+
+`examples/success-manifest.json` is a redacted copy of the successful changed-input run. `examples/failure/` is a synthetic, offline failure bundle that demonstrates the screenshot, HTML, URL, console, stage, and resolver-attempt format without exposing account data. The live failure bundles remain local in `artifacts/`.
 
 The corrupted-state login test is pending the account holder's next run. This workspace has no Git remote, so a GitHub submission link is also pending.
 
