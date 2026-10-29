@@ -6,3 +6,4 @@ __pycache__/
 .env
 input.json
 .DS_Store
+/submission.zip

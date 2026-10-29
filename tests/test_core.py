@@ -200,6 +200,40 @@ def test_resolver_waits_for_late_source_link():
     asyncio.run(check())
 
 
+def test_runner_polls_late_button_and_records_winning_strategy(tmp_path, capsys):
+    from playwright.async_api import async_playwright
+    from portal_runner.runner import Runner
+
+    data = {"owner": "owner", "repository": "repo", "tag": "v1",
+            "target_branch": "main", "title": "title", "description": "body", "publish": True}
+
+    async def check():
+        async with async_playwright() as p:
+            browser = await p.chromium.launch()
+            runner = Runner(browser, data, tmp_path, tmp_path / "state")
+            try:
+                await runner.new_context()
+                await runner.page.set_content("<main></main>")
+
+                async def add_button():
+                    await asyncio.sleep(0.3)
+                    await runner.page.locator("main").evaluate(
+                        "el => el.innerHTML = '<button onclick=\"window.clicked=true\">Continue</button>'")
+
+                task = asyncio.create_task(add_button())
+                await runner.click(Target("continue", role="button", name="Continue", tag="button"))
+                await task
+                assert await runner.page.evaluate("window.clicked === true")
+                assert runner.manifest["locator_strategies"]["continue"] == {
+                    "strategy": "role_name", "frame": "main"}
+            finally:
+                await runner.context.close()
+                await browser.close()
+
+    asyncio.run(check())
+    assert "[locator] continue: role_name (main)" in capsys.readouterr().err
+
+
 def test_target_menu_accepts_non_main_branch():
     from playwright.async_api import async_playwright
 

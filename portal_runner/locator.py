@@ -3,7 +3,7 @@ import asyncio
 from dataclasses import dataclass, field
 import re
 import time
-from typing import Any
+from typing import Any, Callable
 
 
 @dataclass
@@ -28,10 +28,28 @@ class ResolutionError(Exception):
 
 
 class Resolver:
-    def __init__(self):
+    def __init__(self, on_win: Callable[[dict[str, Any]], None] | None = None):
         self.attempts: list[dict[str, Any]] = []
+        self.on_win = on_win
 
-    async def find(self, page, target: Target):
+    async def find(self, page, target: Target, timeout_ms: int = 6000):
+        """Poll for a unique match while the portal renders asynchronous controls."""
+        deadline = time.monotonic() + timeout_ms / 1000
+        delay = 0.1
+        while True:
+            try:
+                locator, winner = await self._find_once(page, target)
+                if self.on_win is not None:
+                    self.on_win(winner)
+                return locator
+            except ResolutionError:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise
+                await asyncio.sleep(min(delay, remaining))
+                delay = min(delay * 1.5, 0.5)
+
+    async def _find_once(self, page, target: Target):
         frames = [page.main_frame, *[f for f in page.frames if f != page.main_frame]]
         per_frame = []
         for frame in frames:
@@ -86,7 +104,7 @@ class Resolver:
                                           "strategy": strategy, "matches": len(visible)})
                     if len(visible) == 1:
                         self.attempts[-1]["won"] = True
-                        return locator.nth(visible[0])
+                        return locator.nth(visible[0]), self.attempts[-1].copy()
                 except Exception as exc:
                     self.attempts.append({"key": target.key, "frame": frame_name,
                                           "strategy": strategy, "error": type(exc).__name__})
@@ -99,18 +117,11 @@ class Resolver:
             for frame in page.frames:
                 if frame != page.main_frame:
                     await frame.wait_for_load_state()
-            await self.find(page, target)
+            await self.find(page, target, timeout_ms=0)
             return next(a for a in reversed(self.attempts) if a.get("won"))
         finally:
             # Caller must use find(page, ...) if it needs to interact with the locator.
             await page.close()
 
     async def wait_for(self, page, target: Target, timeout_ms: int = 10000):
-        deadline = time.monotonic() + timeout_ms / 1000
-        while True:
-            try:
-                return await self.find(page, target)
-            except ResolutionError:
-                if time.monotonic() >= deadline:
-                    raise
-                await asyncio.sleep(0.25)
+        return await self.find(page, target, timeout_ms=timeout_ms)

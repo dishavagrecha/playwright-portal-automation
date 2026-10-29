@@ -44,15 +44,21 @@ def required_inputs(path: Path) -> dict:
 class Runner:
     def __init__(self, browser, data: dict, output: Path, state: Path):
         self.browser, self.data, self.output, self.state = browser, data, output, state
-        self.resolver = Resolver()
         self.console: list[str] = []
         self.manifest = {"inputs": data, "pages_visited": [], "stage_timings_ms": {},
-                         "captured_files": [], "retry_events": [], "session": None,
+                         "captured_files": [], "retry_events": [], "locator_strategies": {},
+                         "session": None,
                          "status": "running"}
+        self.resolver = Resolver(on_win=self.record_locator)
         self.stage = "startup"
         secrets = [os.getenv("GITHUB_USERNAME", ""), os.getenv("GITHUB_PASSWORD", ""),
                    os.getenv("GITHUB_TOTP_SECRET", ""), data["owner"], data["repository"]]
         self.redactor = Redactor(secrets)
+
+    def record_locator(self, winner: dict):
+        key, strategy, frame = winner["key"], winner["strategy"], winner["frame"]
+        self.manifest["locator_strategies"][key] = {"strategy": strategy, "frame": frame}
+        print(f"[locator] {key}: {strategy} ({frame})", file=sys.stderr, flush=True)
 
     async def step(self, key, operation, retry=False):
         self.stage = key
@@ -102,20 +108,21 @@ class Runner:
             return False
         try:
             await self.resolver.find(self.page, Target(
-                "profile_heading", role="heading", name="Public profile", tag="h1"))
+                "profile_heading", role="heading", name="Public profile", tag="h1"),
+                timeout_ms=1500)
         except ResolutionError:
             return False
         username = os.environ["GITHUB_USERNAME"]
         try:
             await self.resolver.find(self.page, Target(
                 "account_identity", role="button", name=username, tag="button",
-                attributes={"data-login": username}))
+                attributes={"data-login": username}), timeout_ms=1500)
             return True
         except ResolutionError:
             try:
                 await self.resolver.find(self.page, Target(
                     "account_identity_meta", tag="meta", visible=False,
-                    attributes={"name": "user-login", "content": username}))
+                    attributes={"name": "user-login", "content": username}), timeout_ms=1500)
                 return True
             except ResolutionError:
                 return False
