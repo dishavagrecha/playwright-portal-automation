@@ -1,0 +1,8 @@
+.venv/
+.state/
+artifacts/
+__pycache__/
+.pytest_cache/
+.env
+input.json
+.DS_Store

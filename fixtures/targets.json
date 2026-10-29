@@ -1,0 +1,5 @@
+{
+  "order_date": {"key": "order_date", "label": "Order date", "nearby": "Order date", "tag": "input", "input_type": "date", "id_hint": "order-date", "class_hint": "old-class"},
+  "order_status": {"key": "order_status", "role": "combobox", "name": "Status", "label": "Status", "tag": "select", "id_hint": "order-status"},
+  "order_term": {"key": "order_term", "role": "searchbox", "name": "Search term", "label": "Search term", "tag": "input", "input_type": "search", "id_hint": "order-term"}
+}
