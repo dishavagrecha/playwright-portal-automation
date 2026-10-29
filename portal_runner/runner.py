@@ -11,6 +11,7 @@ import tempfile
 import time
 import zipfile
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from playwright.async_api import async_playwright, Error as PlaywrightError, TimeoutError as PlaywrightTimeout
 
@@ -210,12 +211,19 @@ class Runner:
     async def open_release_form(self):
         d = self.data
         await self.visit(f'https://github.com/{d["owner"]}/{d["repository"]}')
-        # Empty repositories show Releases as a heading, not a navigable link.
         await self.visit(f'https://github.com/{d["owner"]}/{d["repository"]}/releases')
-        await self.click(Target("new_release", role="link", name="Create a new release", tag="a",
-                                attributes={"href": f'/{d["owner"]}/{d["repository"]}/releases/new'}))
-        await self.page.wait_for_url(f'**/{d["owner"]}/{d["repository"]}/releases/new')
-        self.manifest["pages_visited"].append(self.page.url)
+        form_path = f'/{d["owner"]}/{d["repository"]}/releases/new'
+        try:
+            await self.click(Target("new_release", role="link", name="Create a new release",
+                                    names=("Draft a new release", "New release"), tag="a",
+                                    attributes={"href": form_path}))
+            await self.page.wait_for_url(f'**{form_path}')
+            self.manifest["pages_visited"].append(self.page.url)
+        except ResolutionError:
+            response = await self.visit(f"https://github.com{form_path}")
+            if (response is None or response.status != 200
+                    or urlsplit(self.page.url).path != form_path):
+                raise FinalError("Release form could not be loaded")
 
     async def release_exists(self):
         d = self.data

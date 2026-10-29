@@ -11,7 +11,7 @@ import zipfile
 import pytest
 
 from portal_runner.codes import Challenge, TOTPProvider
-from portal_runner.errors import AuthenticationError, RetryableError
+from portal_runner.errors import AuthenticationError, FinalError, RetryableError
 from portal_runner.evidence import Redactor, sanitize_html, write_failure
 from portal_runner.locator import ResolutionError, Resolver, Target
 
@@ -193,6 +193,38 @@ def test_link_fallback_ignores_matching_heading():
             finally:
                 await browser.close()
     asyncio.run(check())
+
+
+def test_release_form_uses_direct_url_when_create_link_is_missing(tmp_path):
+    from portal_runner.runner import Runner
+
+    data = {"owner": "owner", "repository": "repo", "tag": "v1",
+            "target_branch": "main", "title": "title", "description": "body", "publish": True}
+
+    class OfflineRunner(Runner):
+        def __init__(self, status):
+            super().__init__(None, data, tmp_path, tmp_path / "state")
+            self.page = type("Page", (), {"url": ""})()
+            self.status = status
+
+        async def visit(self, url):
+            self.page.url = url
+            self.manifest["pages_visited"].append(url)
+            return type("Response", (), {"status": self.status})()
+
+        async def click(self, target):
+            raise ResolutionError("Create link is absent", target.key)
+
+    runner = OfflineRunner(200)
+    asyncio.run(runner.open_release_form())
+    assert runner.manifest["pages_visited"] == [
+        "https://github.com/owner/repo",
+        "https://github.com/owner/repo/releases",
+        "https://github.com/owner/repo/releases/new",
+    ]
+
+    with pytest.raises(FinalError, match="Release form could not be loaded"):
+        asyncio.run(OfflineRunner(404).open_release_form())
 
 
 def test_semantic_iframe_match_beats_main_page_structure():
