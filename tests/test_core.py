@@ -216,3 +216,35 @@ def test_download_validates_zip_before_replacing_existing_file(tmp_path):
     asyncio.run(runner.download())
     assert destination.read_bytes() == archive.getvalue()
     assert runner.manifest["captured_files"][0]["bytes"] == len(archive.getvalue())
+
+
+def test_interrupted_run_records_stage_and_status(tmp_path):
+    from playwright.async_api import async_playwright
+    from portal_runner.runner import Runner
+
+    data = {"owner": "owner", "repository": "repo", "tag": "v1",
+            "target_branch": "main", "title": "title", "description": "body", "publish": True}
+
+    class OfflineRunner(Runner):
+        async def session_alive(self):
+            return True
+
+        async def release_exists(self):
+            return False
+
+        async def create_release(self):
+            raise asyncio.CancelledError()
+
+    async def check():
+        async with async_playwright() as p:
+            browser = await p.chromium.launch()
+            try:
+                runner = OfflineRunner(browser, data, tmp_path / "output", tmp_path / "state")
+                with pytest.raises(asyncio.CancelledError):
+                    await runner.run()
+                manifest = json.loads((tmp_path / "output" / "manifest.json").read_text())
+                assert manifest["status"] == "interrupted"
+                assert "create_release" in manifest["stage_timings_ms"]
+            finally:
+                await browser.close()
+    asyncio.run(check())

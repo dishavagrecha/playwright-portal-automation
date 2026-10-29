@@ -1,0 +1,30 @@
+{
+  "inputs": {
+    "owner": "ACCOUNT_OWNER",
+    "repository": "PRIVATE_TEST_REPOSITORY",
+    "tag": "automation-demo-v3",
+    "target_branch": "main",
+    "title": "Automation demo v3",
+    "description": "Fresh-login validation of the hardened Playwright runner.",
+    "publish": true
+  },
+  "pages_visited": [
+    "https://github.com/settings/profile",
+    "https://github.com/ACCOUNT_OWNER/PRIVATE_TEST_REPOSITORY/releases/tag/automation-demo-v3"
+  ],
+  "stage_timings_ms": {
+    "session_check": 990,
+    "find_release": 1555,
+    "download": 937
+  },
+  "captured_files": [
+    {
+      "path": "artifacts/fresh-validation/recovery/automation-demo-v3.zip",
+      "sha256": "91e605344c3e6f4e412b089c17e9c62891821a1a19fd4b2fc6118fa6a6c83b9d",
+      "bytes": 400
+    }
+  ],
+  "retry_events": [],
+  "session": "reused",
+  "status": "success"
+}

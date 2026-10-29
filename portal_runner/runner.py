@@ -1,9 +1,11 @@
 import argparse
 import asyncio
+from contextlib import suppress
 import hashlib
 import json
 import os
 import re
+import sys
 import tempfile
 import time
 import zipfile
@@ -55,19 +57,27 @@ class Runner:
     async def step(self, key, operation, retry=False):
         self.stage = key
         start = time.monotonic()
+        print(f"[{key}] started", file=sys.stderr, flush=True)
         last = None
         for attempt in range(3 if retry else 1):
             try:
                 result = await operation()
                 self.manifest["stage_timings_ms"][key] = round((time.monotonic() - start) * 1000)
+                print(f"[{key}] completed in {self.manifest['stage_timings_ms'][key]} ms",
+                      file=sys.stderr, flush=True)
                 return result
             except (PlaywrightTimeout, OSError) as exc:
                 last = exc
                 self.manifest["retry_events"].append({"stage": key, "attempt": attempt + 1,
                                                        "error": type(exc).__name__,
                                                        "will_retry": retry and attempt < 2})
+                print(f"[{key}] {type(exc).__name__}; attempt {attempt + 1}",
+                      file=sys.stderr, flush=True)
                 if attempt < (2 if retry else 0):
                     await asyncio.sleep(0.5 * 2 ** attempt)
+            except asyncio.CancelledError:
+                self.manifest["stage_timings_ms"][key] = round((time.monotonic() - start) * 1000)
+                raise
             except Exception:
                 self.manifest["stage_timings_ms"][key] = round((time.monotonic() - start) * 1000)
                 raise
@@ -246,6 +256,7 @@ class Runner:
                 await self.step("create_release", self.create_release)
             await self.step("download", self.download, retry=True)
             self.manifest["status"] = "success"
+            print("[run] success", file=sys.stderr, flush=True)
         except Exception as exc:
             self.manifest["status"] = "failure"
             self.manifest["error"] = type(exc).__name__
@@ -255,9 +266,17 @@ class Runner:
             except Exception as evidence_error:
                 self.manifest["evidence_error"] = type(evidence_error).__name__
             raise
+        except asyncio.CancelledError:
+            self.manifest["status"] = "interrupted"
+            self.manifest["error"] = "CancelledError"
+            raise
         finally:
             (self.output / "manifest.json").write_text(json.dumps(self.manifest, indent=2), encoding="utf-8")
-            await self.context.close()
+            if self.manifest["status"] == "interrupted":
+                with suppress(PlaywrightError):
+                    await self.context.close()
+            else:
+                await self.context.close()
 
 
 async def main():
