@@ -1,0 +1,30 @@
+{
+  "inputs": {
+    "owner": "ACCOUNT_OWNER",
+    "repository": "PRIVATE_TEST_REPOSITORY",
+    "tag": "automation-demo-v4",
+    "target_branch": "main",
+    "title": "Automation demo v4",
+    "description": "Uninterrupted fresh-login validation of the Playwright runner.",
+    "publish": true
+  },
+  "pages_visited": [
+    "https://github.com/settings/profile",
+    "https://github.com/ACCOUNT_OWNER/PRIVATE_TEST_REPOSITORY/releases/tag/automation-demo-v4"
+  ],
+  "stage_timings_ms": {
+    "session_check": 1107,
+    "find_release": 1675,
+    "download": 1030
+  },
+  "captured_files": [
+    {
+      "path": "artifacts/final-validation/repeat/automation-demo-v4.zip",
+      "sha256": "0b13cc29c649f49af77be24fc4e4ba0df361caa7e033e90b6f9c6243514943fc",
+      "bytes": 400
+    }
+  ],
+  "retry_events": [],
+  "session": "reused",
+  "status": "success"
+}
