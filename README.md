@@ -11,12 +11,20 @@ Requires Python 3.11+. `run.sh` creates `.venv`, installs pinned dependencies an
 ./run.sh --mock --input fixtures/mock.input.json --output artifacts/mock-fresh --state .mock/session.json
 ```
 
-For the real portal, create a private GitHub test repository with a commit and enable authenticator-app 2FA on your account. Save the **TOTP setup key** separately from the rotating six-digit codes and recovery codes. Copy `example.input.json` to gitignored `input.json`, set its owner, repository, tag, target branch, title and description, then run:
+For the real portal, create a GitHub test repository with a commit on the target branch and enable authenticator-app 2FA on your account. The test repository can stay **private**: the assignment's “public site” is GitHub, not a requirement to publish your test data. Save the **TOTP setup key** separately from the rotating six-digit codes and recovery codes. From the project root, create the gitignored input file:
+
+```bash
+cp example.input.json input.json
+```
+
+Edit `input.json`: use your GitHub username for `owner`, the repository **name only** for `repository` (not a URL or `owner/repository`), an existing `target_branch`, and a tag that does not yet have a release when testing creation. Set the title and description, then run:
 
 ```bash
 ./run.sh --input input.json --output artifacts/first
 ./run.sh --input input.json --output artifacts/second
 ```
+
+The second run should find the existing release and reuse the saved browser session. To test creation again, change the tag and title in `input.json` without changing the code. The downloaded document and `manifest.json` appear in each output directory.
 
 `run.sh` prompts for missing values in a terminal; password and setup key entry have echo disabled. In unattended runs, inject them from a secret manager. Never put credentials or the setup key in input JSON.
 
