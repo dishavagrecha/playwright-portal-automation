@@ -41,8 +41,10 @@ class Resolver:
                 # A label or heading may move between wrappers; search an ancestor container.
                 near = frame.get_by_text(target.nearby, exact=True)
                 candidates.append(("nearby_text", near.locator("xpath=ancestor::*[self::div or self::fieldset or self::label][1]").locator(target.tag)))
-            elif target.name and target.role not in ("textbox", "combobox"):
-                candidates.append(("nearby_text", frame.get_by_text(target.name, exact=True)))
+            elif target.name and target.role in ("link", "button"):
+                clickable_tag = "a" if target.role == "link" else "button"
+                candidates.append(("nearby_text", frame.get_by_text(target.name, exact=True)
+                                   .locator(f"xpath=ancestor-or-self::{clickable_tag}[1]")))
             selector = target.tag
             if target.input_type:
                 selector += f'[type="{target.input_type}"]'

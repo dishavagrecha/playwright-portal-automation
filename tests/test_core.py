@@ -43,3 +43,22 @@ def test_locator_mutations_offline():
             finally:
                 await browser.close()
     asyncio.run(check())
+
+
+def test_link_fallback_ignores_matching_heading():
+    from playwright.async_api import async_playwright
+
+    html = '''<h2>Releases</h2><a href="/owner/repo/releases" aria-label="View releases">
+      <span>Releases</span></a>'''
+
+    async def check():
+        async with async_playwright() as p:
+            browser = await p.chromium.launch()
+            try:
+                result = await Resolver().find_in_html(browser, html, Target(
+                    "releases", role="link", name="Releases", tag="a",
+                    attributes={"href": "/owner/repo/releases"}))
+                assert result["strategy"] == "nearby_text"
+            finally:
+                await browser.close()
+    asyncio.run(check())

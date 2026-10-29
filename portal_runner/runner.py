@@ -112,29 +112,45 @@ class Runner:
     async def open_release_form(self):
         d = self.data
         await self.visit(f'https://github.com/{d["owner"]}/{d["repository"]}')
-        await self.click(Target("releases", role="link", name="Releases", tag="a", attributes={"href": f'/{d["owner"]}/{d["repository"]}/releases'}))
-        await self.page.wait_for_url(f'**/{d["owner"]}/{d["repository"]}/releases')
-        self.manifest["pages_visited"].append(self.page.url)
-        await self.click(Target("new_release", role="link", name="Draft a new release", tag="a"))
+        # Empty repositories show Releases as a heading, not a navigable link.
+        await self.visit(f'https://github.com/{d["owner"]}/{d["repository"]}/releases')
+        await self.click(Target("new_release", role="link", name="Create a new release", tag="a",
+                                attributes={"href": f'/{d["owner"]}/{d["repository"]}/releases/new'}))
         await self.page.wait_for_url(f'**/{d["owner"]}/{d["repository"]}/releases/new')
         self.manifest["pages_visited"].append(self.page.url)
 
     async def release_exists(self):
         d = self.data
         await self.visit(f'https://github.com/{d["owner"]}/{d["repository"]}/releases/tag/{d["tag"]}')
-        return (await self.page.get_by_role("link", name="Source code (zip)").count()) > 0
+        assets = self.page.locator("summary").filter(has_text="Assets")
+        if await assets.count() == 0:
+            return False
+        if await assets.locator("xpath=..").get_attribute("open") is None:
+            await assets.click()
+        try:
+            await self.page.get_by_role("link", name="Source code (zip)").wait_for(
+                state="visible", timeout=15000)
+            return True
+        except PlaywrightTimeout:
+            return False
 
     async def create_release(self):
         d = self.data
         await self.open_release_form()
-        await self.click(Target("tag_menu", role="button", name="Choose a tag", tag="button"))
-        await self.fill(Target("tag", role="textbox", name="Find or create a new tag", placeholder="Find or create a new tag", tag="input", input_type="text"), d["tag"])
-        await self.click(Target("create_tag", role="button", name=f'Create new tag: {d["tag"]}', tag="button"))
-        # The target branch choice is available after creating a new tag.
-        await self.click(Target("target_menu", role="button", name="Target", tag="button"))
-        await self.click(Target("branch", role="option", name=d["target_branch"], tag="button"))
-        await self.fill(Target("release_title", label="Release title", tag="input", id_hint="release_name"), d["title"])
-        await self.fill(Target("release_description", label="Describe this release", placeholder="Describe this release", tag="textarea", id_hint="release_body"), d["description"])
+        await self.click(Target("tag_menu", role="button", name="Tag: Select tag", tag="button",
+                                id_hint="ref-picker-releases-tag"))
+        await self.fill(Target("tag_filter", role="textbox", name="Filter tags",
+                               placeholder="Search or create a new tag", tag="input", input_type="text"), d["tag"])
+        await self.click(Target("create_tag_dialog", role="button", name="Create new tag", tag="button"))
+        await self.fill(Target("tag_name", role="textbox", name="Tag name", tag="input", input_type="text"), d["tag"])
+        await self.click(Target("confirm_tag", role="button", name="Create", tag="button", input_type="submit"))
+        # The target branch determines the commit used for the new tag.
+        await self.click(Target("target_menu", role="button", name="Target: main", tag="summary"))
+        await self.click(Target("branch", role="menuitemradio", name=d["target_branch"], tag="li"))
+        await self.fill(Target("release_title", role="textbox", name="Enter release title",
+                               placeholder="Title", tag="input", id_hint="release_name"), d["title"])
+        await self.fill(Target("release_description", label="Release description",
+                               tag="textarea", id_hint="release_body"), d["description"])
         await self.click(Target("publish_release", role="button", name="Publish release", tag="button", input_type="submit"))
         await self.page.wait_for_load_state("domcontentloaded")
         if not await self.release_exists():
