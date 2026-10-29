@@ -1,0 +1,30 @@
+{
+  "inputs": {
+    "owner": "ACCOUNT_OWNER",
+    "repository": "PRIVATE_TEST_REPOSITORY",
+    "tag": "automation-demo-v1",
+    "target_branch": "main",
+    "title": "Automation demo v1",
+    "description": "test",
+    "publish": true
+  },
+  "pages_visited": [
+    "https://github.com/settings/profile",
+    "https://github.com/ACCOUNT_OWNER/PRIVATE_TEST_REPOSITORY/releases/tag/automation-demo-v1"
+  ],
+  "stage_timings_ms": {
+    "session_check": 942,
+    "find_release": 1599,
+    "download": 1098
+  },
+  "captured_files": [
+    {
+      "path": "artifacts/post-hardening/automation-demo-v1.zip",
+      "sha256": "4a6a016bf83f93eb543e3ce13c609653a1b45d75d4cfe92a7d6d58931bbb6b45",
+      "bytes": 400
+    }
+  ],
+  "retry_events": [],
+  "session": "reused",
+  "status": "success"
+}

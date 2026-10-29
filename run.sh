@@ -1,10 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 cd "$(dirname "$0")"
+if ! python3 -c 'import sys; sys.exit(sys.version_info < (3, 11))'; then
+  echo "Python 3.11 or newer is required." >&2
+  exit 2
+fi
 if [[ ! -d .venv ]]; then
   python3 -m venv .venv
 fi
-if [[ ! -f .venv/.setup-complete ]]; then
+if [[ ! -f .venv/.setup-complete || requirements.txt -nt .venv/.setup-complete ]]; then
   .venv/bin/python -m pip install -r requirements.txt
   .venv/bin/python -m playwright install chromium
   touch .venv/.setup-complete

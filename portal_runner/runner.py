@@ -3,7 +3,10 @@ import asyncio
 import hashlib
 import json
 import os
+import re
+import tempfile
 import time
+import zipfile
 from pathlib import Path
 
 from playwright.async_api import async_playwright, Error as PlaywrightError, TimeoutError as PlaywrightTimeout
@@ -15,14 +18,24 @@ from .locator import ResolutionError, Resolver, Target
 
 def required_inputs(path: Path) -> dict:
     data = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(data, dict):
+        raise ValueError("Input must be a JSON object")
+    allowed = {"owner", "repository", "tag", "target_branch", "title", "description", "publish"}
+    unknown = set(data) - allowed
+    if unknown:
+        raise ValueError(f"Unexpected input fields: {', '.join(sorted(unknown))}")
     for key in ("owner", "repository", "tag", "target_branch", "title", "description"):
-        if not isinstance(data.get(key), str) or not data[key]:
+        if not isinstance(data.get(key), str) or not data[key].strip():
             raise ValueError(f"Input {key} must be a nonempty string")
     if data.get("publish") is not True:
         raise ValueError("Set publish=true in the input to authorize a release in your repository")
-    for key in ("owner", "repository", "tag", "target_branch"):
-        if not all(c.isalnum() or c in "._-" for c in data[key]):
+    for key in ("owner", "repository", "tag"):
+        if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", data[key]) or ".." in data[key]:
             raise ValueError(f"Unsafe characters in {key}")
+    branch = data["target_branch"]
+    if (not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._/-]*", branch)
+            or ".." in branch or "//" in branch or branch.endswith("/")):
+        raise ValueError("Unsafe characters in target_branch")
     return data
 
 
@@ -72,13 +85,22 @@ class Runner:
         await (await self.resolver.find(self.page, target)).fill(value)
 
     async def session_alive(self):
-        # Positive authenticated marker plus a protected settings page, not only URL.
+        # Verify both a protected page and the account whose repository we may change.
         await self.visit("https://github.com/settings/profile")
         heading = self.page.get_by_role("heading", name="Public profile")
         user_meta = self.page.locator('meta[name="user-login"][content]')
         logged_in_body = self.page.locator("body.logged-in")
-        return (await heading.count() > 0 and await user_meta.count() > 0
+        return (await heading.count() > 0 and await user_meta.count() == 1
+                and (await user_meta.get_attribute("content") or "").casefold()
+                == os.environ["GITHUB_USERNAME"].casefold()
                 and await logged_in_body.count() > 0)
+
+    async def new_context(self, saved_state: Path | None = None):
+        self.context = await self.browser.new_context(
+            accept_downloads=True, storage_state=str(saved_state) if saved_state else None)
+        self.context.set_default_timeout(10000)
+        self.page = await self.context.new_page()
+        self.page.on("console", lambda msg: self.console.append(msg.text[:500]))
 
     async def login(self):
         await self.visit("https://github.com/login")
@@ -106,9 +128,16 @@ class Runner:
                     pass
             await self.page.wait_for_load_state("domcontentloaded")
             if "/sessions/two-factor" not in self.page.url and await self.session_alive():
-                self.state.parent.mkdir(parents=True, exist_ok=True)
-                await self.context.storage_state(path=str(self.state))
-                os.chmod(self.state, 0o600)
+                self.state.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+                saved = await self.context.storage_state()
+                fd, temporary = tempfile.mkstemp(dir=self.state.parent, prefix=".github-state-")
+                try:
+                    with os.fdopen(fd, "w", encoding="utf-8") as stream:
+                        json.dump(saved, stream)
+                    os.replace(temporary, self.state)
+                finally:
+                    if os.path.exists(temporary):
+                        os.unlink(temporary)
                 return
         raise RuntimeError("Second factor rejected twice or authentication did not complete")
 
@@ -148,7 +177,7 @@ class Runner:
         await self.fill(Target("tag_name", role="textbox", name="Tag name", tag="input", input_type="text"), d["tag"])
         await self.click(Target("confirm_tag", role="button", name="Create", tag="button", input_type="submit"))
         # The target branch determines the commit used for the new tag.
-        await self.click(Target("target_menu", role="button", name="Target: main", tag="summary"))
+        await self.click(Target("target_menu", role="button", name_pattern=r"^Target:", tag="summary"))
         await self.click(Target("branch", role="menuitemradio", name=d["target_branch"], tag="li"))
         await self.fill(Target("release_title", role="textbox", name="Enter release title",
                                placeholder="Title", tag="input", id_hint="release_name"), d["title"])
@@ -166,13 +195,27 @@ class Runner:
         download = await info.value
         filename = f'{self.data["tag"]}.zip'
         destination = self.output / filename
-        await download.save_as(str(destination))
-        digest = hashlib.sha256(destination.read_bytes()).hexdigest()
+        fd, temporary = tempfile.mkstemp(dir=self.output, prefix=".source-", suffix=".zip")
+        os.close(fd)
+        try:
+            await download.save_as(temporary)
+            try:
+                with zipfile.ZipFile(temporary) as archive:
+                    if not archive.namelist() or archive.testzip() is not None:
+                        raise OSError("Downloaded archive is empty or damaged")
+            except zipfile.BadZipFile as exc:
+                raise OSError("Downloaded archive is not a ZIP file") from exc
+            os.replace(temporary, destination)
+        finally:
+            if os.path.exists(temporary):
+                os.unlink(temporary)
+        with destination.open("rb") as stream:
+            digest = hashlib.file_digest(stream, "sha256").hexdigest()
         self.manifest["captured_files"].append({"path": str(destination), "sha256": digest,
                                                   "bytes": destination.stat().st_size})
 
     async def run(self):
-        self.output.mkdir(parents=True, exist_ok=True)
+        self.output.mkdir(parents=True, exist_ok=True, mode=0o700)
         state_present = self.state.exists()
         state_valid = False
         if state_present:
@@ -182,19 +225,19 @@ class Runner:
             except (OSError, ValueError):
                 pass
         try:
-            self.context = await self.browser.new_context(
-                accept_downloads=True, storage_state=str(self.state) if state_valid else None)
+            await self.new_context(self.state if state_valid else None)
         except (ValueError, TypeError, PlaywrightError):
             # A parseable but invalid state must behave like a missing state.
             state_valid = False
-            self.context = await self.browser.new_context(accept_downloads=True)
-        self.context.set_default_timeout(10000)
-        self.page = await self.context.new_page()
-        self.page.on("console", lambda msg: self.console.append(msg.text[:500]))
+            await self.new_context()
         try:
             alive = await self.step("session_check", self.session_alive, retry=True)
             if not alive:
                 self.manifest["session"] = "stale_login" if state_present else "fresh_login"
+                if state_present:
+                    # Expired or wrong-account cookies must not affect the next login.
+                    await self.context.close()
+                    await self.new_context()
                 await self.step("login", self.login)
             else:
                 self.manifest["session"] = "reused"
@@ -206,8 +249,11 @@ class Runner:
         except Exception as exc:
             self.manifest["status"] = "failure"
             self.manifest["error"] = type(exc).__name__
-            await write_failure(self.browser, self.page, self.output / "failure", self.stage,
-                                self.console, self.resolver.attempts, self.redactor)
+            try:
+                await write_failure(self.browser, self.page, self.output / "failure", self.stage,
+                                    self.console, self.resolver.attempts, self.redactor)
+            except Exception as evidence_error:
+                self.manifest["evidence_error"] = type(evidence_error).__name__
             raise
         finally:
             (self.output / "manifest.json").write_text(json.dumps(self.manifest, indent=2), encoding="utf-8")
@@ -225,6 +271,8 @@ async def main():
     for name in ("GITHUB_USERNAME", "GITHUB_PASSWORD", "GITHUB_TOTP_SECRET"):
         if not os.getenv(name):
             parser.error(f"Missing {name}")
+    if data["owner"].casefold() != os.environ["GITHUB_USERNAME"].casefold():
+        parser.error("Input owner must match GITHUB_USERNAME for this account-only runner")
     async with async_playwright() as playwright:
         browser = await playwright.chromium.launch(headless=not args.headed)
         try:

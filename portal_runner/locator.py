@@ -1,5 +1,6 @@
 """Semantic locator resolution used by live pages and saved HTML fixtures."""
 from dataclasses import dataclass, field
+import re
 from typing import Any
 
 
@@ -8,6 +9,7 @@ class Target:
     key: str
     role: str | None = None
     name: str | None = None
+    name_pattern: str | None = None
     label: str | None = None
     placeholder: str | None = None
     nearby: str | None = None
@@ -28,11 +30,14 @@ class Resolver:
 
     async def find(self, page, target: Target):
         frames = [page.main_frame, *[f for f in page.frames if f != page.main_frame]]
+        per_frame = []
         for frame in frames:
             frame_name = "main" if frame == page.main_frame else "iframe"
             candidates = []
-            if target.role and target.name:
-                candidates.append(("role_name", frame.get_by_role(target.role, name=target.name, exact=True)))
+            if target.role and (target.name or target.name_pattern):
+                name = re.compile(target.name_pattern) if target.name_pattern else target.name
+                candidates.append(("role_name", frame.get_by_role(
+                    target.role, name=name, exact=not target.name_pattern)))
             if target.label:
                 candidates.append(("label", frame.get_by_label(target.label, exact=True)))
             if target.placeholder:
@@ -41,6 +46,9 @@ class Resolver:
                 # A label or heading may move between wrappers; search an ancestor container.
                 near = frame.get_by_text(target.nearby, exact=True)
                 candidates.append(("nearby_text", near.locator("xpath=ancestor::*[self::div or self::fieldset or self::label][1]").locator(target.tag)))
+            elif target.name_pattern:
+                candidates.append(("nearby_text", frame.locator(target.tag).filter(
+                    has_text=re.compile(target.name_pattern))))
             elif target.name and target.role in ("link", "button"):
                 clickable_tag = "a" if target.role == "link" else "button"
                 candidates.append(("nearby_text", frame.get_by_text(target.name, exact=True)
@@ -55,10 +63,22 @@ class Resolver:
                 candidates.append(("id", frame.locator(f'#{target.id_hint}')))
             if target.class_hint:
                 candidates.append(("class", frame.locator(f'.{target.class_hint}')))
-            for strategy, locator in candidates:
+            per_frame.append((frame_name, dict(candidates)))
+        # Search all frames semantically before accepting a broad structural match.
+        for strategy in ("role_name", "label", "placeholder", "nearby_text",
+                         "structure", "id", "class"):
+            for frame_name, candidates in per_frame:
+                locator = candidates.get(strategy)
+                if locator is None:
+                    continue
                 try:
                     count = await locator.count()
-                    visible = [i for i in range(min(count, 20)) if await locator.nth(i).is_visible()]
+                    visible = []
+                    for i in range(count):
+                        if await locator.nth(i).is_visible():
+                            visible.append(i)
+                            if len(visible) == 2:
+                                break
                     self.attempts.append({"key": target.key, "frame": frame_name,
                                           "strategy": strategy, "matches": len(visible)})
                     if len(visible) == 1:
