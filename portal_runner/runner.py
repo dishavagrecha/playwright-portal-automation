@@ -242,7 +242,6 @@ class Runner:
         await self.click(Target("create_tag_dialog", role="button", name="Create new tag", tag="button"))
         await self.fill(Target("tag_name", role="textbox", name="Tag name", tag="input", input_type="text"), d["tag"])
         await self.click(Target("confirm_tag", role="button", name="Create", tag="button", input_type="submit"))
-        # The target branch determines the commit used for the new tag.
         await self.click(Target("target_menu", role="button", name_pattern=r"^Target:", tag="summary"))
         await self.click(Target("branch", role="menuitemradio", name=d["target_branch"], tag="li"))
         await self.fill(Target("release_title", role="textbox", name="Enter release title",
@@ -297,8 +296,6 @@ class Runner:
         try:
             await self.new_context(self.state if state_valid else None)
         except (ValueError, TypeError, PlaywrightError):
-            # A parseable but invalid state must behave like a missing state.
-            state_valid = False
             await self.new_context()
         try:
             alive = await self.step("session_check", self.session_alive, retry=True)

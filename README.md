@@ -26,14 +26,14 @@ For the real portal, create a private GitHub test repository with a commit and e
 | `GITHUB_PASSWORD` | Account password | Supplied internally |
 | `GITHUB_TOTP_SECRET` | Base32 authenticator setup key, not a current code | Supplied internally |
 
-The JSON schema is `owner`, `repository`, `tag`, `target_branch`, `title`, `description`, and `publish: true`. Unknown fields are rejected. The owner must match `GITHUB_USERNAME`; publishing a release changes that repository. To get a different document, change the tag or other release inputs, without editing code.
+The JSON schema is `owner`, `repository`, `tag`, `target_branch`, `title`, `description`, and `publish: true`. Unknown fields are rejected. The owner must match `GITHUB_USERNAME`; publishing a release changes that repository. To create a different release, use a new tag. An existing tag is reused without changing its release inputs.
 
 ## How it works
 
 1. Load saved browser state, then visit GitHub's protected profile page. Require HTTP 200, the `Public profile` heading and the expected account identity. A login redirect or missing markers means a stale session. HTTP 429/5xx and browser network errors are retryable and never trigger a password login directly. Malformed state is discarded.
 2. If state is missing or stale, enter the password and get a six-digit code through the injectable `CodeProvider.get_code(challenge)` interface. `TOTPProvider` computes RFC 6238 codes locally. It records the last used 30-second window in a private state-side file, avoids codes near expiry, and uses a new window for the one allowed wrong-code retry. Codes never go to logs or manifests. A rejected password raises `AuthenticationError` before the 2FA step.
 3. Visit the repository, Releases page, and release form. For a new tag, choose the target branch, fill the release title and description, then publish. On a repeat run, find the existing release and skip publication. The target branch determines the commit for a new tag; GitHub displays the target selector before tag creation, so we do not claim it appears only afterward.
-4. Capture the source ZIP with Playwright's native download event, validate the ZIP, atomically replace the output file, and record its path, byte size and SHA-256 in `manifest.json`. The manifest also includes inputs, visited pages, stage timings, retry events, session path and winning locator strategies.
+4. Capture the source ZIP with Playwright's native download event, validate the ZIP, atomically replace the output file, and record its path, byte size and SHA-256 in `manifest.json`. The manifest also includes inputs, visited pages, stage timings, retry events, session outcome and winning locator strategies.
 
 The live portal quirks are the new-tag/target-branch relationship and the native download. Frame searching is implemented and tested offline against saved HTML; GitHub's live release form does not contain an iframe.
 
@@ -69,9 +69,9 @@ The last command deliberately requests a nonexistent field during `find_release`
 
 ## Evidence and submission
 
-The compact real-portal examples are [fresh](examples/fresh.json), [reused](examples/reused.json), [stale](examples/stale.json), and [failure](examples/failure/). The fresh and reused ZIP hashes match; these examples took about 15.0 s and 4.9 s across stages. The reused example also shows `locator_strategies`. All example text is redacted. Raw `artifacts/` manifests contain account and repository identifiers, and `.state/` contains live cookies: never share either directory.
+The compact real-portal examples are [fresh](examples/fresh.json), [reused](examples/reused.json), [stale](examples/stale.json), and [failure](examples/failure/). The fresh and reused ZIP hashes match; these examples took about 15.0 s and 4.9 s across stages. The reused example also shows `locator_strategies`. The repository also includes a [credential-free mock success output](examples/success/) with its downloaded document and matching manifest. All real-portal example text is redacted. Raw `artifacts/` manifests contain account and repository identifiers, and `.state/` contains live cookies: never share either directory.
 
-Share the repository URL or run `./package.sh` to create `submission.zip` from committed files only. Do not zip the working directory. If an earlier ZIP containing `.state/` was shared, revoke those GitHub sessions under **Settings → Sessions**. Run tests with `.venv/bin/python -m pytest -q`; GitHub Actions runs the same suite on pushes and pull requests.
+Submit the repository URL. The downloaded source ZIP is the portal-produced document, not a package of this project. Run tests with `.venv/bin/python -m pytest -q`; GitHub Actions runs the same suite on pushes and pull requests.
 
 For a hundred portals, first extract a small adapter with four operations: login, authenticated identity check, form traversal, and document capture. Keep code providers, session storage, locator resolution, retries, evidence and manifest generation shared. Give each adapter saved-form contract fixtures and a private canary run. Add a queue only after those contracts are stable.
 

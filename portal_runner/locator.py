@@ -133,7 +133,6 @@ class Resolver:
             await self.find(page, target, timeout_ms=0)
             return next(a for a in reversed(self.attempts) if a.get("won"))
         finally:
-            # Caller must use find(page, ...) if it needs to interact with the locator.
             await page.close()
 
     async def wait_for(self, page, target: Target, timeout_ms: int = 10000):
