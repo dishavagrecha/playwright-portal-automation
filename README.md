@@ -26,7 +26,7 @@ The tag choice makes the target branch field relevant; GitHub documents that tar
 
 1. Create a private GitHub test repository with at least one commit and a branch to release. In your GitHub account's **Settings → Password and authentication**, enable TOTP. Save the setup key in your secret manager, enroll that same key in your authenticator app, and save GitHub's recovery codes separately. Keep your existing recovery method available.
 2. Copy `example.input.json` to `input.json` and change the owner, repository, tag, branch, title, and description. `input.json` is gitignored.
-3. Export `GITHUB_USERNAME`, `GITHUB_PASSWORD`, and `GITHUB_TOTP_SECRET` into your shell from your secret manager. Do not paste them into the JSON file or commit them.
+3. Run from a terminal and enter `GITHUB_USERNAME`, `GITHUB_PASSWORD`, and `GITHUB_TOTP_SECRET` when prompted. The password and setup key are entered with terminal echo disabled. For non-interactive runs, inject these variables from a secret manager. Do not paste them into the JSON file or commit them.
 4. Run:
 
 ```bash
@@ -34,7 +34,7 @@ The tag choice makes the target branch field relevant; GitHub documents that tar
 ./run.sh --input input.json --output artifacts/second
 ```
 
-`run.sh` creates `.venv`, installs the dependencies and Chromium, then runs the CLI. `--headed` shows the browser. To exercise stale state, replace `.state/github.json` with invalid JSON and run again. To request a different archive, change the tag and release fields in the JSON file; no code edit is required.
+`run.sh` creates `.venv`, installs the dependencies and Chromium on first use, then runs the CLI. `--headed` shows the browser. To exercise stale state, replace `.state/github.json` with invalid JSON and run again. To request a different archive, change the tag and release fields in the JSON file; no code edit is required.
 
 The manifest records the input, visited URLs, stage timings, session path (`fresh_login`, `reused`, or `stale_login`), SHA-256 and size of captured files, and final status. Browser state stays in `.state/` and is set to owner-only permissions. It contains live login cookies and must remain private.
 
