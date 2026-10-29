@@ -102,24 +102,44 @@ def sanitize_html(raw_html: str, redactor: Redactor, preserve_locator_attrs: boo
     parser = SafeHTML(redactor, preserve_locator_attrs)
     parser.feed(raw_html)
     parser.close()
-    return "\n".join(line.rstrip() for line in parser.get_html().splitlines()) + "\n"
+    reduced = "\n".join(line.rstrip() for line in parser.get_html().splitlines())
+    return re.sub(r"\n\s*\n+", "\n", reduced) + "\n"
 
 
 async def write_failure(browser, page, directory: Path, stage: str,
-                        console: list[str], attempts: list[dict], redactor: Redactor):
+                        console: list[str], attempts: list[dict], redactor: Redactor,
+                        error: Exception | None = None, target_key: str | None = None):
     directory.mkdir(parents=True, exist_ok=True, mode=0o700)
-    clean_html = sanitize_html(await page.content(), redactor)
+    clean_html = sanitize_html(await page.content(), redactor, preserve_locator_attrs=True)
     (directory / "page.html").write_text(clean_html, encoding="utf-8")
     parts = urlsplit(page.url)
     safe_url = redactor.clean(urlunsplit((parts.scheme, parts.netloc, parts.path, "", "")))
+    relevant = ([attempt for attempt in attempts if attempt.get("key") == target_key]
+                if target_key else attempts[-30:])
+    screenshot_kind = "real_page_masked"
+    try:
+        mask = [page.locator("input, textarea, select, [contenteditable], img, "
+                             "[data-login], [data-user-id], [data-account-id]")]
+        patterns = [re.escape(item) for item in redactor.secrets if len(item) >= 3]
+        patterns += [r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}", r"\b\d{4,}\b"]
+        pattern = re.compile("|".join(patterns), re.I)
+        mask.append(page.get_by_text(pattern))
+        await page.screenshot(path=str(directory / "screenshot.png"),
+                              full_page=True, mask=mask, mask_color="#111111")
+    except Exception:
+        screenshot_kind = "sanitized_html_fallback"
+        safe_page = await browser.new_page()
+        try:
+            await safe_page.set_content(clean_html, wait_until="domcontentloaded")
+            await safe_page.screenshot(path=str(directory / "screenshot.png"), full_page=True)
+        finally:
+            await safe_page.close()
     (directory / "failure.json").write_text(json.dumps({
         "stage": stage, "url": safe_url,
+        "error_class": type(error).__name__ if error else None,
+        "error_message": redactor.clean(str(error)) if error else None,
+        "target_key": target_key,
+        "screenshot_kind": screenshot_kind,
         "console": [redactor.clean(item) for item in console],
-        "resolver_attempts": attempts,
+        "resolver_attempts": relevant,
     }, indent=2), encoding="utf-8")
-    safe_page = await browser.new_page()
-    try:
-        await safe_page.set_content(clean_html, wait_until="domcontentloaded")
-        await safe_page.screenshot(path=str(directory / "screenshot.png"), full_page=True)
-    finally:
-        await safe_page.close()

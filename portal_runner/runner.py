@@ -4,6 +4,7 @@ from contextlib import suppress
 import hashlib
 import json
 import os
+import random
 import re
 import sys
 import tempfile
@@ -13,8 +14,9 @@ from pathlib import Path
 
 from playwright.async_api import async_playwright, Error as PlaywrightError, TimeoutError as PlaywrightTimeout
 
-from .codes import Challenge, TOTPProvider
+from .codes import Challenge, CodeProvider, TOTPProvider
 from .evidence import Redactor, write_failure
+from .errors import AuthenticationError, FinalError, RetryableError
 from .locator import ResolutionError, Resolver, Target
 
 
@@ -42,7 +44,8 @@ def required_inputs(path: Path) -> dict:
 
 
 class Runner:
-    def __init__(self, browser, data: dict, output: Path, state: Path):
+    def __init__(self, browser, data: dict, output: Path, state: Path,
+                 code_provider: CodeProvider | None = None):
         self.browser, self.data, self.output, self.state = browser, data, output, state
         self.console: list[str] = []
         self.manifest = {"inputs": data, "pages_visited": [], "stage_timings_ms": {},
@@ -54,6 +57,7 @@ class Runner:
         secrets = [os.getenv("GITHUB_USERNAME", ""), os.getenv("GITHUB_PASSWORD", ""),
                    os.getenv("GITHUB_TOTP_SECRET", ""), data["owner"], data["repository"]]
         self.redactor = Redactor(secrets)
+        self.code_provider = code_provider
 
     def record_locator(self, winner: dict):
         key, strategy, frame = winner["key"], winner["strategy"], winner["frame"]
@@ -72,7 +76,7 @@ class Runner:
                 print(f"[{key}] completed in {self.manifest['stage_timings_ms'][key]} ms",
                       file=sys.stderr, flush=True)
                 return result
-            except (PlaywrightTimeout, OSError) as exc:
+            except (RetryableError, PlaywrightTimeout, OSError) as exc:
                 last = exc
                 self.manifest["retry_events"].append({"stage": key, "attempt": attempt + 1,
                                                        "error": type(exc).__name__,
@@ -80,7 +84,17 @@ class Runner:
                 print(f"[{key}] {type(exc).__name__}; attempt {attempt + 1}",
                       file=sys.stderr, flush=True)
                 if attempt < (2 if retry else 0):
-                    await asyncio.sleep(0.5 * 2 ** attempt)
+                    await asyncio.sleep(0.5 * 2 ** attempt + random.uniform(0, 0.25))
+            except PlaywrightError as exc:
+                if "net::ERR_" not in str(exc):
+                    self.manifest["stage_timings_ms"][key] = round((time.monotonic() - start) * 1000)
+                    raise
+                last = RetryableError("Browser network request failed")
+                self.manifest["retry_events"].append({"stage": key, "attempt": attempt + 1,
+                                                       "error": "BrowserNetworkError",
+                                                       "will_retry": retry and attempt < 2})
+                if attempt < (2 if retry else 0):
+                    await asyncio.sleep(0.5 * 2 ** attempt + random.uniform(0, 0.25))
             except asyncio.CancelledError:
                 self.manifest["stage_timings_ms"][key] = round((time.monotonic() - start) * 1000)
                 raise
@@ -93,6 +107,8 @@ class Runner:
     async def visit(self, url):
         response = await self.page.goto(url, wait_until="domcontentloaded")
         self.manifest["pages_visited"].append(self.page.url)
+        if response is not None and (response.status == 429 or response.status >= 500):
+            raise RetryableError(f"Portal returned HTTP {response.status}")
         return response
 
     async def click(self, target):
@@ -104,8 +120,12 @@ class Runner:
     async def session_alive(self):
         # Verify both a protected page and the account whose repository we may change.
         response = await self.visit("https://github.com/settings/profile")
-        if response is None or response.status != 200:
+        if response is None:
+            raise RetryableError("Protected page returned no response")
+        if response.status in (401, 302) or "/login" in self.page.url:
             return False
+        if response.status != 200:
+            raise FinalError(f"Protected page returned HTTP {response.status}")
         try:
             await self.resolver.find(self.page, Target(
                 "profile_heading", role="heading", name="Public profile", tag="h1"),
@@ -140,7 +160,14 @@ class Runner:
         await self.fill(Target("password", label="Password", tag="input", input_type="password", id_hint="password"), os.environ["GITHUB_PASSWORD"])
         await self.click(Target("sign_in", role="button", name="Sign in", tag="input", input_type="submit"))
         await self.page.wait_for_load_state("domcontentloaded")
-        provider = TOTPProvider()
+        try:
+            await self.page.wait_for_url(lambda url: "/login" not in url, timeout=8000)
+        except PlaywrightTimeout as exc:
+            raise AuthenticationError("Username or password rejected") from exc
+        if "/sessions/two-factor" not in self.page.url:
+            raise AuthenticationError("Expected a two-factor challenge after password login")
+        provider = self.code_provider or TOTPProvider(
+            last_window_file=self.state.with_suffix(self.state.suffix + ".totp-window"))
         for attempt in range(2):
             code = await provider.get_code(Challenge(attempt))
             self.redactor.secrets.insert(0, code)
@@ -148,11 +175,18 @@ class Runner:
             # GitHub's current six-digit field can submit itself on the last digit.
             # Wait for that navigation before looking for an explicit submit button.
             try:
-                await self.page.wait_for_url(lambda url: "/sessions/two-factor" not in url,
-                                             timeout=5000)
+                await self.page.wait_for_function("""() =>
+                    !location.pathname.includes('/sessions/two-factor') ||
+                    /invalid authentication code|authentication failed|incorrect.{0,20}code/i
+                        .test(document.body.innerText)""", timeout=5000)
             except PlaywrightTimeout:
                 pass
             if "/sessions/two-factor" in self.page.url:
+                body = await self.page.locator("body").inner_text()
+                if attempt == 0 and re.search(
+                    r"invalid authentication code|authentication failed|incorrect.{0,20}code",
+                    body, re.I):
+                    continue
                 try:
                     await self.click(Target("verify_code", role="button", name="Verify", tag="button", input_type="submit"))
                 except ResolutionError:
@@ -171,7 +205,7 @@ class Runner:
                     if os.path.exists(temporary):
                         os.unlink(temporary)
                 return
-        raise RuntimeError("Second factor rejected twice or authentication did not complete")
+        raise AuthenticationError("Second factor rejected twice or authentication did not complete")
 
     async def open_release_form(self):
         d = self.data
@@ -189,7 +223,7 @@ class Runner:
         if response is not None and response.status == 404:
             return False
         if response is None or response.status >= 400:
-            raise RuntimeError("Release page could not be loaded")
+            raise FinalError("Release page could not be loaded")
         assets = await self.resolver.find(self.page, Target(
             "assets_section", role="button", name_pattern=r"^Assets", tag="summary"))
         if not await assets.evaluate("element => element.parentElement?.open === true"):
@@ -215,12 +249,16 @@ class Runner:
                                placeholder="Title", tag="input", id_hint="release_name"), d["title"])
         await self.fill(Target("release_description", label="Release description",
                                tag="textarea", id_hint="release_body"), d["description"])
-        await self.click(Target("publish_release", role="button", name="Publish release", tag="button", input_type="submit"))
+        await self.click(Target("publish_release", role="button", name="Publish release",
+                                names=("Publish", "Create release"), tag="button",
+                                input_type="submit", scope="form"))
         await self.page.wait_for_load_state("domcontentloaded")
         if not await self.release_exists():
-            raise RuntimeError("Release was not visible after publishing")
+            raise FinalError("Release was not visible after publishing")
 
     async def download(self):
+        if not await self.release_exists():
+            raise FinalError("Release disappeared before download")
         target = Target("source_archive", role="link", name="Source code (zip)", tag="a")
         async with self.page.expect_download() as info:
             await self.click(target)
@@ -270,7 +308,7 @@ class Runner:
                     # Expired or wrong-account cookies must not affect the next login.
                     await self.context.close()
                     await self.new_context()
-                await self.step("login", self.login)
+                await self.step("login", self.login, retry=True)
             else:
                 self.manifest["session"] = "reused"
             exists = await self.step("find_release", self.release_exists, retry=True)
@@ -284,7 +322,8 @@ class Runner:
             self.manifest["error"] = type(exc).__name__
             try:
                 await write_failure(self.browser, self.page, self.output / "failure", self.stage,
-                                    self.console, self.resolver.attempts, self.redactor)
+                                    self.console, self.resolver.attempts, self.redactor,
+                                    error=exc, target_key=getattr(exc, "key", None))
             except Exception as evidence_error:
                 self.manifest["evidence_error"] = type(evidence_error).__name__
             raise
@@ -307,8 +346,21 @@ async def main():
     parser.add_argument("--output", type=Path, default=Path("artifacts/run"))
     parser.add_argument("--state", type=Path, default=Path(".state/github.json"))
     parser.add_argument("--headed", action="store_true")
+    parser.add_argument("--mock", action="store_true", help="Run against an in-process localhost portal")
+    parser.add_argument("--mock-break", action="store_true", help="Trigger a locator failure in mock mode")
     args = parser.parse_args()
     data = required_inputs(args.input)
+    if args.mock_break and not args.mock:
+        parser.error("--mock-break requires --mock")
+    if args.mock:
+        from .mock_portal import run_mock
+        async with async_playwright() as playwright:
+            browser = await playwright.chromium.launch(headless=not args.headed)
+            try:
+                await run_mock(browser, data, args.output, args.state, args.mock_break)
+            finally:
+                await browser.close()
+        return
     for name in ("GITHUB_USERNAME", "GITHUB_PASSWORD", "GITHUB_TOTP_SECRET"):
         if not os.getenv(name):
             parser.error(f"Missing {name}")

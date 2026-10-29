@@ -13,6 +13,11 @@ if [[ ! -f .venv/.setup-complete || requirements.txt -nt .venv/.setup-complete ]
   .venv/bin/python -m playwright install chromium
   touch .venv/.setup-complete
 fi
+for argument in "$@"; do
+  if [[ "$argument" == "--mock" ]]; then
+    exec .venv/bin/python -m portal_runner.runner "$@"
+  fi
+done
 if [[ ! -t 0 ]] && { [[ -z "${GITHUB_USERNAME:-}" ]] || [[ -z "${GITHUB_PASSWORD:-}" ]] || [[ -z "${GITHUB_TOTP_SECRET:-}" ]]; }; then
   echo "Set GITHUB_USERNAME, GITHUB_PASSWORD, and GITHUB_TOTP_SECRET for non-interactive runs." >&2
   exit 2

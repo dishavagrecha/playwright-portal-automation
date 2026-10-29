@@ -11,15 +11,47 @@ import zipfile
 import pytest
 
 from portal_runner.codes import Challenge, TOTPProvider
+from portal_runner.errors import AuthenticationError, RetryableError
 from portal_runner.evidence import Redactor, sanitize_html, write_failure
-from portal_runner.locator import Resolver, Target
+from portal_runner.locator import ResolutionError, Resolver, Target
 
 
 def test_totp_rfc_vector():
     # RFC 6238 SHA-1 test secret, truncated to the six digits GitHub uses.
     secret = "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ"
     with patch("time.time", return_value=59):
-        assert asyncio.run(TOTPProvider(secret).get_code(Challenge())) == "287082"
+        assert asyncio.run(TOTPProvider(secret, min_remaining=0).get_code(Challenge())) == "287082"
+
+
+def test_totp_does_not_reuse_a_window_across_provider_instances(tmp_path):
+    clock = [90]
+    async def advance(seconds):
+        clock[0] += seconds
+    with patch("portal_runner.codes.time.time", side_effect=lambda: clock[0]):
+        window_file = tmp_path / "last-window"
+        first = asyncio.run(TOTPProvider("JBSWY3DPEHPK3PXP", min_remaining=0,
+                                          last_window_file=window_file, sleep=advance)
+                            .get_code(Challenge()))
+        second = asyncio.run(TOTPProvider("JBSWY3DPEHPK3PXP", min_remaining=0,
+                                           last_window_file=window_file, sleep=advance)
+                             .get_code(Challenge()))
+    assert first != second
+    assert int(window_file.read_text()) > 3
+
+
+@pytest.mark.parametrize("status", [429, 502])
+def test_retryable_http_does_not_become_a_dead_session(tmp_path, status):
+    from portal_runner.runner import Runner
+    data = {"owner": "owner", "repository": "repo", "tag": "v1",
+            "target_branch": "main", "title": "title", "description": "body", "publish": True}
+    runner = Runner(None, data, tmp_path, tmp_path / "state")
+    class Page:
+        url = "https://github.com/settings/profile"
+        async def goto(self, *_args, **_kwargs):
+            return type("Response", (), {"status": status})()
+    runner.page = Page()
+    with pytest.raises(RetryableError, match=str(status)):
+        asyncio.run(runner.session_alive())
 
 
 def test_redaction():
@@ -57,14 +89,22 @@ def test_failure_bundle_is_written_without_known_secrets(tmp_path):
                     <input type="password" value="pass-word"><p>Search failed</p></body></html>''')
                 await write_failure(browser, page, tmp_path, "find_release",
                                     ['accountId: 987654 pass-word'],
-                                    [{"key": "missing", "strategy": "role_name", "matches": 0}],
-                                    Redactor(["alice", "pass-word"]))
+                                    [{"key": "old", "strategy": "label", "matches": 1},
+                                     {"key": "missing", "strategy": "role_name", "matches": 0}],
+                                    Redactor(["alice", "pass-word"]),
+                                    error=ResolutionError("Could not locate missing", "missing"),
+                                    target_key="missing")
                 assert all((tmp_path / name).exists() for name in
                            ("page.html", "screenshot.png", "failure.json"))
                 contents = (tmp_path / "page.html").read_text() + (tmp_path / "failure.json").read_text()
                 for secret in ("alice", "pass-word", "987654"):
                     assert secret not in contents
-                assert json.loads((tmp_path / "failure.json").read_text())["stage"] == "find_release"
+                evidence = json.loads((tmp_path / "failure.json").read_text())
+                assert evidence["stage"] == "find_release"
+                assert evidence["error_class"] == "ResolutionError"
+                assert evidence["target_key"] == "missing"
+                assert evidence["screenshot_kind"] == "real_page_masked"
+                assert len(evidence["resolver_attempts"]) == 1
             finally:
                 await page.close()
                 await browser.close()
@@ -115,6 +155,7 @@ def test_mutated_saved_github_form_resolves_offline():
     saved = Path("fixtures/github-release-form.html").read_text()
     targets = json.loads(Path("fixtures/github-release-targets.json").read_text())
     renamed = re.sub(r'class="[^"]*"', 'class="renamed"', saved)
+    renamed = renamed.replace('>Publish release</button>', '>Publish</button>')
     title = re.search(r'<input\b[^>]*id="release_name"[^>]*>', renamed)
     assert title is not None
     reordered = renamed.replace(title.group(), "", 1)
@@ -234,6 +275,110 @@ def test_runner_polls_late_button_and_records_winning_strategy(tmp_path, capsys)
     assert "[locator] continue: role_name (main)" in capsys.readouterr().err
 
 
+def test_button_synonym_and_form_scoped_fallback():
+    from playwright.async_api import async_playwright
+
+    async def check():
+        async with async_playwright() as p:
+            browser = await p.chromium.launch()
+            try:
+                target = Target("publish_release", role="button", name="Publish release",
+                                names=("Publish",), tag="button", input_type="submit", scope="form")
+                synonym = await Resolver().find_in_html(browser,
+                    '<form><button type="submit">Publish</button></form>', target)
+                assert synonym["strategy"] == "role_name"
+                scoped = await Resolver().find_in_html(browser,
+                    '<button type="submit">Other</button><form><button type="submit">Go</button></form>',
+                    target)
+                assert scoped["strategy"] == "structure"
+            finally:
+                await browser.close()
+    asyncio.run(check())
+
+
+def test_mock_portal_evaluation_cycle(tmp_path):
+    from playwright.async_api import async_playwright
+    from portal_runner.mock_portal import run_mock
+
+    data = json.loads(Path("fixtures/mock.input.json").read_text())
+    state = tmp_path / "state.json"
+
+    async def check():
+        async with async_playwright() as p:
+            browser = await p.chromium.launch()
+            try:
+                await run_mock(browser, data, tmp_path / "fresh", state)
+                fresh = json.loads((tmp_path / "fresh/manifest.json").read_text())
+                assert fresh["session"] == "fresh_login"
+                assert (tmp_path / "fresh/demo-v1.zip").exists()
+                await run_mock(browser, data, tmp_path / "reused", state)
+                reused = json.loads((tmp_path / "reused/manifest.json").read_text())
+                assert reused["session"] == "reused"
+                assert fresh["captured_files"][0]["sha256"] == reused["captured_files"][0]["sha256"]
+                state.write_text("corrupt")
+                await run_mock(browser, data, tmp_path / "stale", state)
+                stale = json.loads((tmp_path / "stale/manifest.json").read_text())
+                assert stale["session"] == "stale_login"
+                changed = {**data, "tag": "demo-v2", "title": "Different document"}
+                await run_mock(browser, changed, tmp_path / "changed", state)
+                other = json.loads((tmp_path / "changed/manifest.json").read_text())
+                assert other["captured_files"][0]["sha256"] != fresh["captured_files"][0]["sha256"]
+                with pytest.raises(ResolutionError):
+                    await run_mock(browser, changed, tmp_path / "broken", state, True)
+                evidence = json.loads((tmp_path / "broken/failure/failure.json").read_text())
+                assert evidence["stage"] == "find_release"
+                assert evidence["error_class"] == "ResolutionError"
+                assert evidence["screenshot_kind"] == "real_page_masked"
+                assert evidence["resolver_attempts"]
+                assert all(item["key"] == "deliberately_missing_field"
+                           for item in evidence["resolver_attempts"])
+            finally:
+                await browser.close()
+    asyncio.run(check())
+
+
+def test_mock_login_rejects_password_and_retries_one_wrong_code(tmp_path, monkeypatch):
+    from playwright.async_api import async_playwright
+    from portal_runner.mock_portal import MockRunner, PASSWORD, SECRET, serve
+
+    data = json.loads(Path("fixtures/mock.input.json").read_text())
+    monkeypatch.setenv("GITHUB_USERNAME", "demo")
+    monkeypatch.setenv("GITHUB_PASSWORD", "wrong-password")
+
+    async def check():
+        async with async_playwright() as p:
+            browser = await p.chromium.launch()
+            try:
+                with serve(data, tmp_path / "db.json") as base:
+                    runner = MockRunner(browser, data, tmp_path, tmp_path / "state", base)
+                    await runner.new_context()
+                    try:
+                        with pytest.raises(AuthenticationError, match="password"):
+                            await runner.login()
+                    finally:
+                        await runner.context.close()
+                    monkeypatch.setenv("GITHUB_PASSWORD", PASSWORD)
+                    class WrongThenRight:
+                        attempts = []
+                        async def get_code(self, challenge):
+                            self.attempts.append(challenge.attempt)
+                            correct = await TOTPProvider(SECRET).get_code(challenge)
+                            return ("000000" if correct != "000000" else "999999") if challenge.attempt == 0 else correct
+                    provider = WrongThenRight()
+                    runner = MockRunner(browser, data, tmp_path, tmp_path / "state", base)
+                    runner.code_provider = provider
+                    await runner.new_context()
+                    try:
+                        await runner.login()
+                        assert provider.attempts == [0, 1]
+                        assert (tmp_path / "state").exists()
+                    finally:
+                        await runner.context.close()
+            finally:
+                await browser.close()
+    asyncio.run(check())
+
+
 def test_target_menu_accepts_non_main_branch():
     from playwright.async_api import async_playwright
 
@@ -330,6 +475,8 @@ def test_download_validates_zip_before_replacing_existing_file(tmp_path):
     class OfflineRunner(Runner):
         async def click(self, target):
             pass
+        async def release_exists(self):
+            return True
 
     data = {"owner": "owner", "repository": "repo", "tag": "v1",
             "target_branch": "main", "title": "title", "description": "body", "publish": True}

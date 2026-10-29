@@ -30,7 +30,9 @@
     "key": "publish_release",
     "role": "button",
     "name": "Publish release",
+    "names": ["Publish", "Create release"],
     "tag": "button",
-    "input_type": "submit"
+    "input_type": "submit",
+    "scope": "form"
   }
 }

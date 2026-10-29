@@ -1,34 +1,12 @@
 {
   "stage": "find_release",
   "url": "https://github.com/[REDACTED]/[REDACTED]/releases/new",
+  "error_class": "ResolutionError",
+  "error_message": "Could not uniquely locate [TOKEN]",
+  "target_key": "deliberately_missing_field",
+  "screenshot_kind": "real_page_masked",
   "console": [],
   "resolver_attempts": [
-    {
-      "key": "profile_heading",
-      "frame": "main",
-      "strategy": "role_name",
-      "matches": 1,
-      "won": true
-    },
-    {
-      "key": "account_identity",
-      "frame": "main",
-      "strategy": "role_name",
-      "matches": 0
-    },
-    {
-      "key": "account_identity",
-      "frame": "main",
-      "strategy": "nearby_text",
-      "matches": 0
-    },
-    {
-      "key": "account_identity",
-      "frame": "main",
-      "strategy": "structure",
-      "matches": 1,
-      "won": true
-    },
     {
       "key": "deliberately_missing_field",
       "frame": "main",
@@ -40,12 +18,6 @@
       "frame": "main",
       "strategy": "structure",
       "matches": 2
-    },
-    {
-      "key": "deliberately_missing_field",
-      "frame": "main",
-      "strategy": "id",
-      "matches": 0
     }
   ]
 }

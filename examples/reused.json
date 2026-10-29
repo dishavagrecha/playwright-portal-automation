@@ -10,16 +10,17 @@
   },
   "pages_visited": [
     "https://github.com/settings/profile",
+    "https://github.com/ACCOUNT_OWNER/PRIVATE_TEST_REPOSITORY/releases/tag/automation-demo-v4",
     "https://github.com/ACCOUNT_OWNER/PRIVATE_TEST_REPOSITORY/releases/tag/automation-demo-v4"
   ],
   "stage_timings_ms": {
-    "session_check": 1339,
-    "find_release": 1687,
-    "download": 917
+    "session_check": 1320,
+    "find_release": 1379,
+    "download": 2173
   },
   "captured_files": [
     {
-      "path": "artifacts/locator-validation/automation-demo-v4.zip",
+      "path": "artifacts/final-review-reuse/automation-demo-v4.zip",
       "sha256": "0b13cc29c649f49af77be24fc4e4ba0df361caa7e033e90b6f9c6243514943fc",
       "bytes": 400
     }
