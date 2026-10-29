@@ -1,86 +1,106 @@
 # Playwright portal document capture
 
-A single-process Python CLI signs in to **your own GitHub account** with password and TOTP, reuses Playwright browser state, creates a release from JSON input when needed, and downloads GitHub's generated source ZIP. The repository also includes a localhost mock portal for repeatable grading without credentials. The mock demonstrates the same fresh, reused, stale, changed-input, and failure paths; the [redacted examples](examples/) come from the real GitHub account except where noted.
+This Python CLI signs in to your GitHub account with password and TOTP, reuses the saved browser session, creates a release for a new tag, and downloads GitHub's generated source ZIP. A local mock portal exercises the same workflow without credentials.
 
-## Quick start
+## Quick start: local mock
 
-Requires Python 3.11+. `run.sh` creates `.venv`, installs pinned dependencies and Chromium, then runs the CLI.
-
-```bash
-# No credentials or network account needed; creates a local release and ZIP.
-./run.sh --mock --input fixtures/mock.input.json --output artifacts/mock-fresh --state .mock/session.json
-```
-
-For the real portal, create a GitHub test repository with a commit on the target branch and enable authenticator-app 2FA on your account. The test repository can stay **private**: the assignment's “public site” is GitHub, not a requirement to publish your test data. Save the **TOTP setup key** separately from the rotating six-digit codes and recovery codes. From the project root, create the gitignored input file:
+Requires Python 3.11 or newer. From the repository root, run:
 
 ```bash
-cp example.input.json input.json
+./run.sh --mock --input fixtures/mock.input.json --output artifacts/mock-first --state .mock/session.json
 ```
 
-Edit `input.json`: use your GitHub username for `owner`, the repository **name only** for `repository` (not a URL or `owner/repository`), an existing `target_branch`, and a tag that does not yet have a release when testing creation. Set the title and description, then run:
+`run.sh` creates a virtual environment, installs the pinned dependencies and Chromium, and starts the mock portal. The run should end with `[run] success`. Check `artifacts/mock-first/manifest.json` for `"status": "success"` and `"session": "fresh_login"`. The downloaded document is `artifacts/mock-first/demo-v1.zip`.
+
+Run it again with the same state file:
 
 ```bash
-./run.sh --input input.json --output artifacts/first
-./run.sh --input input.json --output artifacts/second
+./run.sh --mock --input fixtures/mock.input.json --output artifacts/mock-second --state .mock/session.json
 ```
 
-The second run should find the existing release and reuse the saved browser session. To test creation again, change the tag and title in `input.json` without changing the code. The downloaded document and `manifest.json` appear in each output directory.
+The second run should have no `[login]` stage. Its manifest should say `"session": "reused"`, and its downloaded ZIP should have the same SHA-256 hash. For a fresh demonstration after previous runs, choose a new `--state` path.
 
-`run.sh` prompts for missing values in a terminal; password and setup key entry have echo disabled. In unattended runs, inject them from a secret manager. Never put credentials or the setup key in input JSON.
+Run the test suite:
 
-| Environment variable | Real GitHub run | Mock run |
+```bash
+.venv/bin/python -m pytest -q
+```
+
+GitHub Actions runs the same tests on pushes and pull requests.
+
+## Real GitHub run
+
+1. Use a test repository you own with a commit on the branch you will target. Enable authenticator-app two-factor authentication on your GitHub account and save its **TOTP setup key**. This is not a current six-digit code.
+2. Create the local input file:
+
+   ```bash
+   cp example.input.json input.json
+   ```
+
+3. Edit `input.json`. Set `owner` to your GitHub username; `repository` to the repository **name only**, not a URL or `owner/repository`; `target_branch` to an existing branch; and `tag` to a tag without a release. Set `title` and `description`, and keep `"publish": true`. The template values are placeholders.
+4. Run the program:
+
+   ```bash
+   ./run.sh --input input.json --output artifacts/real-first
+   ```
+
+`run.sh` prompts for your username, password, and TOTP setup key. Password and key input are hidden. The code provider generates the six-digit login code automatically. A new tag causes the program to publish a release in the repository named by `input.json`.
+
+Run the same input again to check reuse:
+
+```bash
+./run.sh --input input.json --output artifacts/real-second
+```
+
+The second manifest should say `"session": "reused"`. The run should skip `create_release` because the tag already has a release. To create a different document, change the tag and title in `input.json` and choose a new output directory; no code change is needed.
+
+For unattended runs, supply these environment variables instead of using the prompts:
+
+| Variable | Value |
+| --- | --- |
+| `GITHUB_USERNAME` | Account username; must match `owner`. |
+| `GITHUB_PASSWORD` | Account password. |
+| `GITHUB_TOTP_SECRET` | Base32 authenticator setup key, not a current code. |
+
+The wrapper prompts for missing credentials on each real invocation so it can recover if a saved session is stale. A reused session does not visit the login page.
+
+`input.json`, `.state/`, `.mock/`, and `artifacts/` are gitignored. Do not put credentials in the JSON input or commit saved browser state or raw run output.
+
+## Reproduce the evaluation cases
+
+Run the two mock commands above first. Then use these commands to exercise specific cases:
+
+| Case | Command | Expected result |
 | --- | --- | --- |
-| `GITHUB_USERNAME` | Account that owns the input repository | Supplied internally as `demo` |
-| `GITHUB_PASSWORD` | Account password | Supplied internally |
-| `GITHUB_TOTP_SECRET` | Base32 authenticator setup key, not a current code | Supplied internally |
+| Corrupt saved state | `printf broken > .mock/session.json; ./run.sh --mock --input fixtures/mock.input.json --output artifacts/mock-stale --state .mock/session.json` | Full login, success, `"session": "stale_login"`. |
+| Change input | `sed 's/demo-v1/demo-v2/' fixtures/mock.input.json > .mock/changed.json; ./run.sh --mock --input .mock/changed.json --output artifacts/mock-changed --state .mock/session.json` | New tag and a different ZIP hash. |
+| Break a step | `./run.sh --mock --mock-break --input fixtures/mock.input.json --output artifacts/mock-broken --state .mock/session.json` | Nonzero exit and `artifacts/mock-broken/failure/`. |
 
-The JSON schema is `owner`, `repository`, `tag`, `target_branch`, `title`, `description`, and `publish: true`. Unknown fields are rejected. The owner must match `GITHUB_USERNAME`; publishing a release changes that repository. To create a different release, use a new tag. An existing tag is reused without changing its release inputs.
+The failure directory contains `failure.json`, `page.html`, and `screenshot.png`. These include the stage, sanitized URL, console messages, resolver attempts, and a masked page view.
 
-## How it works
-
-1. Load saved browser state, then visit GitHub's protected profile page. Require HTTP 200, the `Public profile` heading and the expected account identity. A login redirect or missing markers means a stale session. HTTP 429/5xx and browser network errors are retryable and never trigger a password login directly. Malformed state is discarded.
-2. If state is missing or stale, enter the password and get a six-digit code through the injectable `CodeProvider.get_code(challenge)` interface. `TOTPProvider` computes RFC 6238 codes locally. It records the last used 30-second window in a private state-side file, avoids codes near expiry, and uses a new window for the one allowed wrong-code retry. Codes never go to logs or manifests. A rejected password raises `AuthenticationError` before the 2FA step.
-3. Visit the repository, Releases page, and release form. If the Releases page does not show a create link, open the form URL and verify it loaded. For a new tag, choose the target branch, fill the release title and description, then publish. On a repeat run, find the existing release and skip publication. The target branch determines the commit for a new tag; GitHub displays the target selector before tag creation, so we do not claim it appears only afterward.
-4. Capture the source ZIP with Playwright's native download event, validate the ZIP, atomically replace the output file, and record its path, byte size and SHA-256 in `manifest.json`. The manifest also includes inputs, visited pages, stage timings, retry events, session outcome and winning locator strategies.
-
-The live portal quirks are the new-tag/target-branch relationship and the native download. Frame searching is implemented and tested offline against saved HTML; GitHub's live release form does not contain an iframe.
-
-## Locator and retry design
-
-Every interactive target goes through `Resolver`. It tries accessible **role and name**, then **label**, **placeholder**, **nearby text**, **scoped structure**, **ID**, **class**, and an optional **ordinal** fallback. Targets can provide multiple names and labels, so a button reworded from “Publish release” to “Publish” still resolves. Semantic strategies come first because they survive class changes, added wrappers and reordered siblings; structural and positional hints are last because they are more fragile. The resolver searches all frames, requires a unique visible match, polls for up to six seconds with bounded backoff, prints the winning strategy and records it under `locator_strategies` in the manifest. The lazy-loaded source link gets 15 seconds.
-
-`RetryableError`, Playwright timeouts and `net::ERR_*` network failures receive at most two retries with exponential backoff and jitter. HTTP 429/5xx are retryable. Authentication rejection, invalid inputs, ambiguous locators after their polling budget and unexpected portal state are final failures. Login itself can retry transient browser/network failures; a wrong TOTP code is a separate one-time auth retry.
-
-Run the production resolver without visiting a portal:
+Run the resolver against saved GitHub HTML without visiting the site:
 
 ```bash
 .venv/bin/python -m portal_runner.offline --html fixtures/github-release-form.html --targets fixtures/github-release-targets.json
 .venv/bin/python -m pytest -q tests/test_core.py::test_mutated_saved_github_form_resolves_offline
 ```
 
-The saved form came from the real GitHub release page. The test renames classes, reorders a control, adds wrappers and puts the form in an iframe. The smaller `fixtures/form.html` isolates frame behavior.
+The mutation test renames classes, reorders a control, adds a wrapper, and puts the form in an iframe. All five controls should still resolve.
 
-## Reproduce the evaluation rows locally
+## Design
 
-The mock server runs inside the CLI process on `127.0.0.1`. It uses demo credentials and a demo TOTP secret; no GitHub account is involved. These commands write only under gitignored `.mock/` and `artifacts/`. Start from a clean local demo with `rm -rf .mock`.
+- **Second factor:** `CodeProvider.get_code(challenge)` is async. `TOTPProvider` calculates codes from the setup key and avoids codes near expiry or from a previously used time window. The runner retries a rejected code once with a fresh window. Codes are not logged.
+- **Session persistence:** Playwright state is saved after login. On a later run, the program checks a protected profile page, its HTTP status, the “Public profile” heading, and the expected account identity. Missing markers or a login redirect trigger a full login; temporary network or server errors are retried.
+- **Navigation and portal quirks:** The program visits the repository, Releases page, and release form, then fills the tag, target branch, title, and description. The target branch selects the commit for a new tag; in the mock, its branch field is disabled until a tag is entered. The live run captures GitHub's native download event. The resolver can search iframes, as the offline test shows.
+- **Locators:** `Resolver` tries role and name, label, placeholder, nearby text, scoped structure, ID, class, then an optional ordinal fallback. It searches all frames, waits for late controls, requires one visible match, and records the winning strategy. Semantic names come first because they are less affected by class changes and reordered HTML.
+- **Retries and evidence:** HTTP 429/5xx, Playwright timeouts, and browser network failures get at most two retries with backoff. Invalid inputs, rejected authentication, unresolved or ambiguous controls, and unexpected page states are final failures. A final failure writes sanitized HTML, a masked screenshot, and diagnostic JSON.
 
-| Evaluation | Command after the quick-start command | Expected result |
-| --- | --- | --- |
-| No saved state | The quick-start command above | `fresh_login`, ZIP and complete manifest |
-| Run again | `./run.sh --mock --input fixtures/mock.input.json --output artifacts/mock-repeat --state .mock/session.json` | `reused`, same ZIP SHA-256, no login page |
-| Corrupt state | `printf broken > .mock/session.json; ./run.sh --mock --input fixtures/mock.input.json --output artifacts/mock-stale --state .mock/session.json` | `stale_login`, full TOTP login, valid ZIP |
-| Change input | `sed 's/demo-v1/demo-v2/' fixtures/mock.input.json > .mock/changed.json; ./run.sh --mock --input .mock/changed.json --output artifacts/mock-changed --state .mock/session.json` | New tag and a different ZIP hash |
-| Mutate HTML | Run the two offline resolver commands above | Five controls resolve after mutation, including the iframe |
-| Break a step | `./run.sh --mock --mock-break --input fixtures/mock.input.json --output artifacts/mock-broken --state .mock/session.json` | Nonzero exit and `artifacts/mock-broken/failure/` bundle |
-
-The last command deliberately requests a nonexistent field during `find_release`. A final failure writes `failure.json` with the stage, sanitized URL, error class/message, console entries and only that target's resolver attempts. `page.html` keeps safe IDs and classes while removing scripts, hidden fields, values, links and account identifiers. `screenshot.png` is a real Playwright screenshot with inputs and identity text masked; if the page cannot be captured, it falls back to a render of the sanitized HTML. The [published failure bundle](examples/failure/) is from a read-only, deliberately broken step on the real GitHub release form.
+`manifest.json` records the JSON inputs, pages visited, stage timings, session outcome, retry events, locator strategies, and captured file path, size, and SHA-256. The downloaded ZIP is validated before replacing any existing file.
 
 ## Evidence and submission
 
-The compact real-portal examples are [fresh](examples/fresh.json), [reused](examples/reused.json), [stale](examples/stale.json), and [failure](examples/failure/). The fresh and reused ZIP hashes match; these examples took about 15.0 s and 4.9 s across stages. The reused example also shows `locator_strategies`. The repository also includes a [credential-free mock success output](examples/success/) with its downloaded document and matching manifest. All real-portal example text is redacted. Raw `artifacts/` manifests contain account and repository identifiers, and `.state/` contains live cookies: never share either directory.
+The repository includes a [mock successful run](examples/success/) with its document and manifest. Redacted real GitHub examples show a [fresh login](examples/fresh.json), [session reuse](examples/reused.json), [stale-session recovery](examples/stale.json), and a [failure bundle](examples/failure/). Submit the repository URL; the downloaded ZIP is the portal-produced document, not a package of this project.
 
-Submit the repository URL. The downloaded source ZIP is the portal-produced document, not a package of this project. Run tests with `.venv/bin/python -m pytest -q`; GitHub Actions runs the same suite on pushes and pull requests.
-
-For a hundred portals, first extract a small adapter with four operations: login, authenticated identity check, form traversal, and document capture. Keep code providers, session storage, locator resolution, retries, evidence and manifest generation shared. Give each adapter saved-form contract fixtures and a private canary run. Add a queue only after those contracts are stable.
+For a hundred portals, first make a small adapter per portal for login, identity check, form traversal, and document capture. Keep code providers, state storage, locators, retries, evidence, and manifests shared. Add saved-form tests and private canary runs for each adapter before adding a queue.
 
 References: [GitHub 2FA](https://docs.github.com/en/authentication/securing-your-account-with-two-factor-authentication-2fa/accessing-github-using-two-factor-authentication), [GitHub releases](https://docs.github.com/en/repositories/releasing-projects-on-github/managing-releases-in-a-repository), [Playwright authentication](https://playwright.dev/python/docs/auth), [Playwright downloads](https://playwright.dev/python/docs/downloads).
