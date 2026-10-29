@@ -10,7 +10,7 @@ from playwright.async_api import async_playwright, Error as PlaywrightError, Tim
 
 from .codes import Challenge, TOTPProvider
 from .evidence import Redactor, write_failure
-from .locator import Resolver, Target
+from .locator import ResolutionError, Resolver, Target
 
 
 def required_inputs(path: Path) -> dict:
@@ -86,7 +86,19 @@ class Runner:
             code = await provider.get_code(Challenge(attempt))
             self.redactor.secrets.insert(0, code)
             await self.fill(Target("two_factor_code", label="Authentication code", tag="input", input_type="text", id_hint="app_totp"), code)
-            await self.click(Target("verify_code", role="button", name="Verify", tag="button", input_type="submit"))
+            # GitHub's current six-digit field can submit itself on the last digit.
+            # Wait for that navigation before looking for an explicit submit button.
+            try:
+                await self.page.wait_for_url(lambda url: "/sessions/two-factor" not in url,
+                                             timeout=5000)
+            except PlaywrightTimeout:
+                pass
+            if "/sessions/two-factor" in self.page.url:
+                try:
+                    await self.click(Target("verify_code", role="button", name="Verify", tag="button", input_type="submit"))
+                except ResolutionError:
+                    # No submit control: the code was auto-submitted and rejected.
+                    pass
             await self.page.wait_for_load_state("domcontentloaded")
             if "/sessions/two-factor" not in self.page.url and await self.session_alive():
                 self.state.parent.mkdir(parents=True, exist_ok=True)
