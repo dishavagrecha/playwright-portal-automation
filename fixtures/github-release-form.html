@@ -1,0 +1,463 @@
+<html><body><form class="js-release-form" id="new_release">
+
+
+
+
+
+<div class="form-group mt-0 js-release-tag">
+
+    <div class="d-flex flex-wrap release-row-gap-1">
+      <div class="position-relative mr-1 js-release-check-tag" id="tag-list">
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  <div><div class="js-release-ref-selector"><button type="button" aria-label="Tag: Select tag" class="prc-Button-ButtonBase-9n-Xk RefSelectorOverlayBtn__KrS-QJ" id="ref-picker-releases-tag"><span class="prc-Button-ButtonContent-Iohp5"><span class="prc-Button-Visual-YNt2F prc-Button-LeadingVisual-UySKu prc-Button-VisualWrap-E4cnq"></span><span class="prc-Button-Label-FWkx3"><div class="RefSelectorOverlayContainer__do_QsK"><div class="ref-selector-button-text-container RefSelectorBtnTextContainer__U9K7hH"><span class="RefSelectorText__DKi677"><span class="fgColor-muted">Tag:</span><span> Select tag</span></span></div></div></span><span class="prc-Button-Visual-YNt2F prc-Button-VisualWrap-E4cnq"></span></span></button></div></div>
+
+
+
+      </div>
+
+      <div class="d-inline-block mr-1 js-release-target-wrapper js-release-check-tag">
+        <details class="details-reset details-overlay d-md-inline-block ml-md-1 mr-md-1 ">
+            <summary class="btn d-block" role="button">
+            Target:
+            <span class="flex-auto ml-1">main</span>
+            <span class="dropdown-caret ml-2"></span>
+</summary>
+
+
+              <div class="SelectMenu-header">
+                <span class="SelectMenu-title" id="release-target-menu-title">Pick a branch or recent commit</span>
+              </div>
+
+
+                <input type="text" class="SelectMenu-input form-control" placeholder="Filter branches…" aria-label="Filter branches">
+
+              <div class="SelectMenu-tabs" role="tablist">
+                <button type="button" class="SelectMenu-tab" role="tab">Branches</button>
+                <button type="button" class="SelectMenu-tab" role="tab">Recent Commits</button>
+              </div>
+              <div class="SelectMenu-list" role="tabpanel" id="filter-list-branches">
+                <ul role="menu" aria-label="Branches">
+                    <li role="menuitemradio">
+                      <label class="SelectMenu-item">
+
+
+                        <span>main</span>
+                      </label>
+                    </li>
+                </ul>
+
+              </div>
+
+
+
+
+        </details>
+      </div>
+    </div>
+
+    <div class="mt-2">
+
+
+      <p class="note js-tag-status-message" role="status">
+        Choose an existing tag, or create a new tag when you publish this release.
+      </p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    </div>
+</div>
+
+<div class="form-group mt-0 mb-1">
+  <div class="d-block">
+    <h2 class="mb-1 h5">Release title</h2>
+      <input placeholder="Title" aria-label="Enter release title" class="form-control js-quick-submit flex-auto mr-0" type="text" id="release_name">
+  </div>
+  <h2 class="tmp-mt-4 h5">Release notes</h2>
+  <p class="note tmp-mb-3hidden">Select a previous tag to create generated release notes</p>
+</div>
+
+<div class="d-flex flex-wrap release-row-gap-1">
+  <div class="d-flex flex-wrap flex-self-end gap-1">
+
+
+    <button id="generate-notes-btn" type="button" class="js-generate-release-notes Button--secondary Button--medium Button">  <span class="Button-content">
+    <span class="Button-label">
+
+
+      <span id="generate-btn-txt">Generate release notes</span></span>
+  </span>
+</button>Select a valid tag to automatically add the Markdown for all the merged pull requests from this diff and contributors of this release
+  </div>
+</div>
+
+<div class="form-group">
+
+  <div class="js-length-limited-input-container">
+
+
+<label for="release_body" class="sr-only position-absolute">Release description</label>
+
+
+  <div class="tabnav CommentBox-header width-full">
+      <div class="tabnav-tabs" role="tablist" aria-label="Add a comment">
+        <button type="button" class="btn-link tabnav-tab write-tab js-write-tab" role="tab" id="write_tab_previewable-comment-form-component-53b01249-4684-4719-8a87-62559f234beb">
+          Write
+        </button>
+        <button type="button" class="btn-link tabnav-tab preview-tab js-preview-tab" role="tab" id="preview_tab_previewable-comment-form-component-53b01249-4684-4719-8a87-62559f234beb">
+          Preview
+        </button>
+      </div>
+
+
+  <div class="ActionBar-item-container">
+      <div class="ActionBar-item"><button id="action-bar-38a0ff3e-8433-4bb7-b87c-f18ad7c06665" type="button" class="Button Button--iconOnly Button--invisible Button--medium">
+</button>
+</div>
+      <div class="ActionBar-item"><button id="action-bar-[NUMBER]-a310-4e1b-ab22-c1ae556c68fe" type="button" class="Button Button--iconOnly Button--invisible Button--medium">
+</button>
+</div>
+      <div class="ActionBar-item"><button id="action-bar-99d4cdae-a92a-452e-af69-72ec53b728d6" type="button" class="Button Button--iconOnly Button--invisible Button--medium">
+</button>
+</div>
+      <div class="ActionBar-item"><button id="action-bar-6c3992a0-ac5b-4185-a0ff-e7b2b7b33b3d" type="button" class="Button Button--iconOnly Button--invisible Button--medium">
+</button>
+</div>
+      <div class="ActionBar-item"><button id="action-bar-fd1ba0c4-4ee0-4d49-a17e-96b95e5f2544" type="button" class="Button Button--iconOnly Button--invisible Button--medium">
+</button>
+</div>
+      <div class="ActionBar-item"><button id="action-bar-f34a63b4-5320-4709-ad8b-90f1d29cb423" type="button" class="Button Button--iconOnly Button--invisible Button--medium">
+</button>
+</div>
+
+      <div class="ActionBar-item"><button id="action-bar-16da31eb-b500-43ce-8099-f55611b6eb28" type="button" class="Button Button--iconOnly Button--invisible Button--medium">
+</button>
+</div>
+      <div class="ActionBar-item"><button id="action-bar-[NUMBER]-0f53-446f-8dfa-96594da738c9" type="button" class="Button Button--iconOnly Button--invisible Button--medium">
+</button>
+</div>
+      <div class="ActionBar-item"><button id="action-bar-ba268b94-0b71-4179-b632-6a62532d8ef5" type="button" class="Button Button--iconOnly Button--invisible Button--medium">
+</button>
+</div>
+
+      <div class="ActionBar-item"><button id="action-bar-bff15662-510f-43bc-9a0c-b1ec6e1aa5bc" type="button" class="Button Button--iconOnly Button--invisible Button--medium">
+</button>
+</div>
+      <div class="ActionBar-item"><button id="action-bar-1c7390c4-d6ba-4881-a647-b526bc0d4747" type="button" class="Button Button--iconOnly Button--invisible Button--medium">
+</button>
+</div>
+      <div class="ActionBar-item"><button id="action-bar-98d82626-04e1-4f88-95f9-6fc7d92fe91c" type="button" class="Button Button--iconOnly Button--invisible Button--medium">
+</button>
+</div>
+      <div class="ActionBar-item"><button id="action-bar-[NUMBER]-ca34-473a-b20e-1d4e290348f8" type="button" class="Button Button--iconOnly Button--invisible Button--medium">
+</button>
+</div>
+</div>
+
+
+
+    <div class="Overlay-header">
+  <div class="Overlay-headerContentWrap">
+    <div class="Overlay-titleWrap">
+      <h1 class="Overlay-title " id="saved_replies_menu_release_body-dialog-title">
+        Select a reply
+      </h1>
+
+    </div>
+    <div class="Overlay-actionWrap">
+      <button aria-label="Close" type="button" class="close-button Overlay-closeButton"></button>
+    </div>
+  </div>
+
+</div>
+
+        <div class="Overlay-body">
+
+      <span>
+      <span class="sr-only">Loading</span>
+</span>
+
+
+</div>
+
+      <div class="Overlay-footer Overlay-footer--alignEnd Overlay-footer--divided">    <a class="Button--invisible Button--medium Button Button--fullWidth">  <span class="Button-content Button-content--alignStart">
+      <span class="Button-visual Button-leadingVisual">
+
+      </span>
+    <span class="Button-label">Create a new saved reply</span>
+  </span>
+</a>
+</div>
+
+
+
+  </div>
+
+
+
+
+    <div class="js-write-bucket position-relative">
+
+
+
+
+                      <div class="CommentBox-container">
+            <textarea id="release_body" placeholder=" " class="js-comment-field js-paste-markdown js-task-list-field js-quick-submit FormControl-textarea CommentBox-input js-size-to-fit size-to-fit js-session-resumable js-saved-reply-shortcut-comment-field js-length-limited-input CommentBox-input--large">[REDACTED]</textarea>
+
+          </div>
+
+
+
+
+        <div class="file-attachment-errors">
+
+  <div class="rounded-bottom-2 bad-file repository-required Banner flash Banner--error flash-error Banner--full flash-full border-bottom-0">
+      <div class="Banner-visual">
+
+      </div>
+    <div class="Banner-message">
+      <p class="Banner-title">We don’t support that file type.</p>
+        <p>Try again with GIF, JPEG, JPG, MOV, MP4, PNG, SVG, WEBM, WEBP, BMP, C, COPILOTMD, CPP, CPUPROFILE, CS, CSS, CSV, DEBUG, DMP, DOC, DOCX, DRAWIO, EML, FODG, FODP, FODS, FODT, GZ, HTM, HTML, IPYNB, JAVA, JS, JSON, JSONC, LOG, MD, MP3, MSG, ODF, ODG, ODP, ODS, ODT, PATCH, PDB, PDF, PHP, PPTX, PY, RTF, SH, SQL, TGZ, TIF, TIFF, TS, TSV, TSX, TXT, WAV, XLS, XLSM, XLSX, XML, YAML, YML or ZIP.</p>
+</div></div>
+
+  <div class="rounded-bottom-2 bad-permissions Banner flash Banner--error flash-error Banner--full flash-full border-bottom-0">
+      <div class="Banner-visual">
+
+      </div>
+    <div class="Banner-message">
+      <p class="Banner-title">Attaching documents requires write permission to this repository.</p>
+        <p>Try again with GIF, JPEG, JPG, MOV, MP4, PNG, SVG, WEBM, WEBP, BMP, C, COPILOTMD, CPP, CPUPROFILE, CS, CSS, CSV, DEBUG, DMP, DOC, DOCX, DRAWIO, EML, FODG, FODP, FODS, FODT, GZ, HTM, HTML, IPYNB, JAVA, JS, JSON, JSONC, LOG, MD, MP3, MSG, ODF, ODG, ODP, ODS, ODT, PATCH, PDB, PDF, PHP, PPTX, PY, RTF, SH, SQL, TGZ, TIF, TIFF, TS, TSV, TSX, TXT, WAV, XLS, XLSM, XLSX, XML, YAML, YML or ZIP.</p>
+</div></div>
+
+  <div class="rounded-bottom-2 too-big js-upload-too-big Banner flash Banner--error flash-error Banner--full flash-full border-bottom-0">
+      <div class="Banner-visual">
+
+      </div>
+    <div class="Banner-message">
+      <p class="Banner-title"></p>
+</div></div>
+
+  <div class="rounded-bottom-2 empty Banner flash Banner--error flash-error Banner--full flash-full border-bottom-0">
+      <div class="Banner-visual">
+
+      </div>
+    <div class="Banner-message">
+      <p class="Banner-title">This file is empty.</p>
+        <p>Try again with a file that’s not empty.</p>
+</div></div>
+
+  <div class="rounded-bottom-2 hidden-file Banner flash Banner--error flash-error Banner--full flash-full border-bottom-0">
+      <div class="Banner-visual">
+
+      </div>
+    <div class="Banner-message">
+      <p class="Banner-title">This file is hidden.</p>
+        <p>Try again with another file.</p>
+</div></div>
+
+  <div class="rounded-bottom-2 failed-request Banner flash Banner--error flash-error Banner--full flash-full border-bottom-0">
+      <div class="Banner-visual">
+
+      </div>
+    <div class="Banner-message">
+      <p class="Banner-title">Something went really wrong, and we can’t process that file.</p>
+        <p>Try again.</p>
+</div></div>
+        </div>
+    </div>
+
+    <div class="pr-2 pl-2 pb-2 d-flex flex-items-center">
+      <div class="border-right color-border-muted d-inline-block mr-1 tmp-mr-1 pr-2 tmp-pr-2">
+        <a class="Button--invisible Button--small Button">  <span class="Button-content">
+      <span class="Button-visual Button-leadingVisual">
+
+      </span>
+    <span class="Button-label">Markdown<span class="hide-sm"> is supported</span></span>
+  </span>
+</a>
+</div>        <button type="button" class="Button--invisible Button--small Button">  <span class="Button-content">
+      <span class="Button-visual Button-leadingVisual">
+
+      </span>
+    <span class="Button-label"><span class="hide-md hide-lg hide-xl">Add files</span>
+            <span class="hide-sm ">Paste, drop, or click to add files</span></span>
+  </span>
+</button>
+    </div>
+
+
+
+
+
+
+    <p class="js-length-limited-input-warning d-none color-fg-danger"></p>
+
+
+  </div>
+</div>
+
+
+
+
+<ul class="color-bg-default list-style-none uploaded-files js-releases-field not-populated">
+  <li class="p-2 js-release-file border-top d-none js-template">
+  <div class="clearfix live form-group ">
+      <div class="float-right text-right pr-2 flex-shrink-0">
+        <button id="icon-button-70b7ae27-4851-4011-b0f8-94033237281e" type="button" class="Button Button--iconOnly Button--invisible Button--medium js-release-remove-file remove">
+</button>
+
+      </div>
+    <div class="form-group-body">
+        <input type="text" class="col-8 mr-2 text-mono form-control js-release-asset-filename" placeholder="Change this file’s name" aria-label="Change this file’s name">
+
+
+        <span class="col-2 f6 color-fg-muted js-release-asset-filesize flex-shrink-0">()</span>
+    </div>
+  </div>
+  <div class="d-flex pb-2 pt-2 d-none delete-pending">
+    <div class="float-right pr-2">
+        <button aria-label="Undo" type="button" class="js-release-undo-remove-file Button--invisible Button--medium Button Button--invisible-noVisuals py-2 tmp-py-2">  <span class="Button-content">
+    <span class="Button-label">Undo</span>
+  </span>
+</button>
+
+    </div>
+    <div class="p-2" role="status">
+      <span class="text-mono color-fg-danger js-release-asset-filename"></span>
+      <span class="color-fg-muted">will be deleted</span>
+    </div>
+  </div>
+</li>
+
+</ul>
+
+
+
+    <button type="button" class="releases-file-attachment-label tmp-py-3 f5 border-dashed text-normal drag-and-drop d-flex flex-justify-center flex-items-center drop-target-label position-relative width-full" aria-label="Attach binaries by dropping them here or selecting them">
+      <span class="default position-relative text-center">
+          <span class="color-bg-subtle position-absolute top-0 left-0 width-full height-full rounded-2"></span>
+          <span class="position-relative pr-2">
+
+            Attach binaries by dropping them here or selecting them.
+          </span>
+      </span>
+      <span class="loading">
+        <span>
+      <span class="sr-only">Loading</span>
+</span>
+        Uploading your file now…
+      </span>
+      <span class="error duplicate-filename" id="is-duplicate-filename-message">
+        An attachment with that filename already exists.
+        <span class="drag-and-drop-error-info">
+          <span class="btn-link manual-file-chooser-text">Try a different file.</span>
+        </span>
+      </span>
+      <span class="error too-many" id="is-too-many-message">
+        Too many assets. Releases are limited to 1000 assets.
+      </span>
+      <span class="error bad-file" id="is-bad-file-message">
+        We don’t support that file type.  Try zipping it.
+        <span class="drag-and-drop-error-info">
+          <span class="btn-link manual-file-chooser-text">Try another file.</span>
+        </span>
+      </span>
+      <span class="error too-big" id="is-too-big-message">
+        Yowza, that’s a big file.
+        <span class="drag-and-drop-error-info">
+          <span class="btn-link manual-file-chooser-text">Try again</span> with a file smaller than 2GB.
+        </span>
+      </span>
+      <span class="error empty" id="is-empty-message">
+        This file is empty.
+        <span class="drag-and-drop-error-info">
+          <span class="btn-link manual-file-chooser-text">Try again</span> with a file that’s not empty.
+        </span>
+      </span>
+      <span class="error failed-request" id="is-failed-message">
+        Something went really wrong, and we can’t process that file.
+        <span class="drag-and-drop-error-info">
+          <span class="btn-link manual-file-chooser-text">Try another file.</span>
+        </span>
+      </span>
+    </button>
+    <span class="sr-only" role="alert"></span>
+    <div class="position-relative border-0 color-bg-default upload-progress">
+      <div class="position-absolute top-0 height-full upload-meter js-upload-meter"></div>
+    </div>
+
+
+
+<fieldset class="js-release-label-fieldset">
+  <legend class="mb-0 tmp-pt-3 h5">Release label</legend>
+
+  <div class="form-checkbox mt-2 mb-2">
+    <label class="text-normal">
+      <input type="radio" class="js-release-label-radio">
+      None
+    </label>
+  </div>
+
+  <div class="form-checkbox mt-2 mb-2">
+    <label class="text-normal">
+      <input type="radio" class="js-release-label-radio">
+      Pre-release
+    </label>
+    <span class="note">
+      Label release as non-production ready
+    </span>
+  </div>
+
+    <div class="form-checkbox mt-2 mb-2">
+      <label class="text-normal">
+        <input type="radio" class="js-release-label-radio">
+        Latest
+      </label>
+      <span class="note">
+        Label release as the latest for this repository
+      </span>
+    </div>
+</fieldset>
+
+
+
+
+
+
+<hr>
+
+    <button class="btn btn-primary" type="submit">Publish release</button>
+  <button class="btn js-save-draft" type="submit">
+    <span class="js-save-draft-button-state">
+      Save draft
+    </span>
+
+
+
+</button>
+</form></body></html>

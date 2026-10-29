@@ -1,6 +1,8 @@
 """Semantic locator resolution used by live pages and saved HTML fixtures."""
+import asyncio
 from dataclasses import dataclass, field
 import re
+import time
 from typing import Any
 
 
@@ -18,6 +20,7 @@ class Target:
     attributes: dict[str, str] = field(default_factory=dict)
     id_hint: str | None = None
     class_hint: str | None = None
+    visible: bool = True
 
 
 class ResolutionError(Exception):
@@ -75,7 +78,7 @@ class Resolver:
                     count = await locator.count()
                     visible = []
                     for i in range(count):
-                        if await locator.nth(i).is_visible():
+                        if not target.visible or await locator.nth(i).is_visible():
                             visible.append(i)
                             if len(visible) == 2:
                                 break
@@ -101,3 +104,13 @@ class Resolver:
         finally:
             # Caller must use find(page, ...) if it needs to interact with the locator.
             await page.close()
+
+    async def wait_for(self, page, target: Target, timeout_ms: int = 10000):
+        deadline = time.monotonic() + timeout_ms / 1000
+        while True:
+            try:
+                return await self.find(page, target)
+            except ResolutionError:
+                if time.monotonic() >= deadline:
+                    raise
+                await asyncio.sleep(0.25)

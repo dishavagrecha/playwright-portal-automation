@@ -85,8 +85,9 @@ class Runner:
         raise last
 
     async def visit(self, url):
-        await self.page.goto(url, wait_until="domcontentloaded")
+        response = await self.page.goto(url, wait_until="domcontentloaded")
         self.manifest["pages_visited"].append(self.page.url)
+        return response
 
     async def click(self, target):
         await (await self.resolver.find(self.page, target)).click()
@@ -96,14 +97,28 @@ class Runner:
 
     async def session_alive(self):
         # Verify both a protected page and the account whose repository we may change.
-        await self.visit("https://github.com/settings/profile")
-        heading = self.page.get_by_role("heading", name="Public profile")
-        user_meta = self.page.locator('meta[name="user-login"][content]')
-        logged_in_body = self.page.locator("body.logged-in")
-        return (await heading.count() > 0 and await user_meta.count() == 1
-                and (await user_meta.get_attribute("content") or "").casefold()
-                == os.environ["GITHUB_USERNAME"].casefold()
-                and await logged_in_body.count() > 0)
+        response = await self.visit("https://github.com/settings/profile")
+        if response is None or response.status != 200:
+            return False
+        try:
+            await self.resolver.find(self.page, Target(
+                "profile_heading", role="heading", name="Public profile", tag="h1"))
+        except ResolutionError:
+            return False
+        username = os.environ["GITHUB_USERNAME"]
+        try:
+            await self.resolver.find(self.page, Target(
+                "account_identity", role="button", name=username, tag="button",
+                attributes={"data-login": username}))
+            return True
+        except ResolutionError:
+            try:
+                await self.resolver.find(self.page, Target(
+                    "account_identity_meta", tag="meta", visible=False,
+                    attributes={"name": "user-login", "content": username}))
+                return True
+            except ResolutionError:
+                return False
 
     async def new_context(self, saved_state: Path | None = None):
         self.context = await self.browser.new_context(
@@ -163,18 +178,18 @@ class Runner:
 
     async def release_exists(self):
         d = self.data
-        await self.visit(f'https://github.com/{d["owner"]}/{d["repository"]}/releases/tag/{d["tag"]}')
-        assets = self.page.locator("summary").filter(has_text="Assets")
-        if await assets.count() == 0:
+        response = await self.visit(f'https://github.com/{d["owner"]}/{d["repository"]}/releases/tag/{d["tag"]}')
+        if response is not None and response.status == 404:
             return False
-        if await assets.locator("xpath=..").get_attribute("open") is None:
+        if response is None or response.status >= 400:
+            raise RuntimeError("Release page could not be loaded")
+        assets = await self.resolver.find(self.page, Target(
+            "assets_section", role="button", name_pattern=r"^Assets", tag="summary"))
+        if not await assets.evaluate("element => element.parentElement?.open === true"):
             await assets.click()
-        try:
-            await self.page.get_by_role("link", name="Source code (zip)").wait_for(
-                state="visible", timeout=15000)
-            return True
-        except PlaywrightTimeout:
-            return False
+        source = Target("source_archive", role="link", name="Source code (zip)", tag="a")
+        await self.resolver.wait_for(self.page, source, timeout_ms=15000)
+        return True
 
     async def create_release(self):
         d = self.data

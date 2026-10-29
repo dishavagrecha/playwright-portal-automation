@@ -1,14 +1,17 @@
 import asyncio
 from contextlib import asynccontextmanager
+import html
 from io import BytesIO
 import json
+from pathlib import Path
+import re
 from unittest.mock import patch
 import zipfile
 
 import pytest
 
 from portal_runner.codes import Challenge, TOTPProvider
-from portal_runner.evidence import Redactor
+from portal_runner.evidence import Redactor, sanitize_html, write_failure
 from portal_runner.locator import Resolver, Target
 
 
@@ -24,6 +27,48 @@ def test_redaction():
         "alice alice@example.com my-password 123456")
     for value in ("alice", "alice@example.com", "my-password", "123456"):
         assert value not in clean
+
+
+def test_failure_html_removes_hidden_tokens_and_account_identifiers():
+    raw = '''<html><head><meta name="csrf-token" content="unknown-token"></head><body>
+      <script>const secret = "pass-word"</script>
+      <h1>Account 987654321 for alice</h1>
+      <input type="hidden" name="authenticity_token" value="unknown-token">
+      <input type="password" value="pass-word">
+      <textarea>private customer note</textarea>
+      <a href="/alice?code=123456">Continue</a>
+    </body></html>'''
+    clean = sanitize_html(raw, Redactor(["alice", "pass-word", "123456"]))
+    for value in ("alice", "pass-word", "987654321", "unknown-token",
+                  "private customer note", "href=", "<script", "<meta"):
+        assert value not in clean
+    assert "[REDACTED]" in clean
+
+
+def test_failure_bundle_is_written_without_known_secrets(tmp_path):
+    from playwright.async_api import async_playwright
+
+    async def check():
+        async with async_playwright() as p:
+            browser = await p.chromium.launch()
+            page = await browser.new_page()
+            try:
+                await page.set_content('''<html><body><h1>Account 987654 for alice</h1>
+                    <input type="password" value="pass-word"><p>Search failed</p></body></html>''')
+                await write_failure(browser, page, tmp_path, "find_release",
+                                    ['accountId: 987654 pass-word'],
+                                    [{"key": "missing", "strategy": "role_name", "matches": 0}],
+                                    Redactor(["alice", "pass-word"]))
+                assert all((tmp_path / name).exists() for name in
+                           ("page.html", "screenshot.png", "failure.json"))
+                contents = (tmp_path / "page.html").read_text() + (tmp_path / "failure.json").read_text()
+                for secret in ("alice", "pass-word", "987654"):
+                    assert secret not in contents
+                assert json.loads((tmp_path / "failure.json").read_text())["stage"] == "find_release"
+            finally:
+                await page.close()
+                await browser.close()
+    asyncio.run(check())
 
 
 def test_input_validation_rejects_extra_fields_and_accepts_branch_path(tmp_path):
@@ -59,6 +104,32 @@ def test_locator_mutations_offline():
                     tag="input", input_type="date", class_hint="old-class"))
                 assert found["frame"] == "iframe"
                 assert found["strategy"] == "label"
+            finally:
+                await browser.close()
+    asyncio.run(check())
+
+
+def test_mutated_saved_github_form_resolves_offline():
+    from playwright.async_api import async_playwright
+
+    saved = Path("fixtures/github-release-form.html").read_text()
+    targets = json.loads(Path("fixtures/github-release-targets.json").read_text())
+    renamed = re.sub(r'class="[^"]*"', 'class="renamed"', saved)
+    title = re.search(r'<input\b[^>]*id="release_name"[^>]*>', renamed)
+    assert title is not None
+    reordered = renamed.replace(title.group(), "", 1)
+    reordered = re.sub(r'(<form\b[^>]*>)', r'\1<div class="added-wrapper">'
+                       + title.group() + '</div>', reordered, count=1)
+    wrapped = f'<html><body><div><iframe srcdoc="{html.escape(reordered, quote=True)}"></iframe></div></body></html>'
+
+    async def check():
+        async with async_playwright() as p:
+            browser = await p.chromium.launch()
+            try:
+                for spec in targets.values():
+                    winner = await Resolver().find_in_html(browser, wrapped, Target(**spec))
+                    assert winner["frame"] == "iframe"
+                    assert winner["strategy"] in {"role_name", "label", "placeholder", "nearby_text"}
             finally:
                 await browser.close()
     asyncio.run(check())
@@ -102,6 +173,33 @@ def test_semantic_iframe_match_beats_main_page_structure():
     asyncio.run(check())
 
 
+def test_resolver_waits_for_late_source_link():
+    from playwright.async_api import async_playwright
+
+    async def check():
+        async with async_playwright() as p:
+            browser = await p.chromium.launch()
+            page = await browser.new_page()
+            try:
+                await page.set_content('<main id="assets"></main>')
+
+                async def add_link():
+                    await asyncio.sleep(0.2)
+                    await page.locator('#assets').evaluate(
+                        "el => el.innerHTML = '<a href=\"/archive.zip\">Source code (zip)</a>'")
+
+                task = asyncio.create_task(add_link())
+                result = await Resolver().wait_for(page, Target(
+                    "source_archive", role="link", name="Source code (zip)", tag="a"),
+                    timeout_ms=2000)
+                await task
+                assert await result.is_visible()
+            finally:
+                await page.close()
+                await browser.close()
+    asyncio.run(check())
+
+
 def test_target_menu_accepts_non_main_branch():
     from playwright.async_api import async_playwright
 
@@ -132,6 +230,7 @@ def test_protected_page_from_another_account_is_not_reused(tmp_path, monkeypatch
             await self.page.set_content('''<html><head>
                 <meta name="user-login" content="other-user"></head>
                 <body class="logged-in"><h1>Public profile</h1></body></html>''')
+            return type("Response", (), {"status": 200})()
 
     async def check():
         async with async_playwright() as p:

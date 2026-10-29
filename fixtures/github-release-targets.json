@@ -1,0 +1,36 @@
+{
+  "tag_menu": {
+    "key": "tag_menu",
+    "role": "button",
+    "name": "Tag: Select tag",
+    "tag": "button",
+    "id_hint": "ref-picker-releases-tag"
+  },
+  "target_menu": {
+    "key": "target_menu",
+    "role": "button",
+    "name_pattern": "^Target:",
+    "tag": "summary"
+  },
+  "release_title": {
+    "key": "release_title",
+    "role": "textbox",
+    "name": "Enter release title",
+    "placeholder": "Title",
+    "tag": "input",
+    "id_hint": "release_name"
+  },
+  "release_description": {
+    "key": "release_description",
+    "label": "Release description",
+    "tag": "textarea",
+    "id_hint": "release_body"
+  },
+  "publish_release": {
+    "key": "publish_release",
+    "role": "button",
+    "name": "Publish release",
+    "tag": "button",
+    "input_type": "submit"
+  }
+}
